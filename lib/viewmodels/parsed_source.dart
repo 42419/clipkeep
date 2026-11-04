@@ -5,11 +5,17 @@ class ParsedSource {
     required this.author,
     required this.coverUrl,
     required this.parts,
+    this.publishDate,
+    this.ownerMid,
+    this.authorAvatarUrl,
   });
 
   final String title;
   final String author;
   final String? coverUrl;
+  final String? publishDate;
+  final int? ownerMid;
+  final String? authorAvatarUrl;
   final List<MediaPart> parts;
 }
 
@@ -39,6 +45,25 @@ class MediaPart {
     return pool.first;
   }
 
+  /// 按指定画质选视频流；为空或不存在时回退到最优 avc。
+  MediaStream? pickVideoQuality(int? quality) {
+    if (quality == null) {
+      return pickVideo();
+    }
+    final videos = streams.where((s) => s.kind == 'video').toList();
+    if (videos.isEmpty) {
+      return null;
+    }
+    final match = videos.where((s) => s.quality == quality).toList();
+    if (match.isEmpty) {
+      return pickVideo();
+    }
+    final avc = match.where((s) => s.codec == 'avc').toList();
+    final pool = avc.isNotEmpty ? avc : match;
+    pool.sort((a, b) => b.quality.compareTo(a.quality));
+    return pool.first;
+  }
+
   MediaStream? pickAudio() {
     final audios = streams.where((s) => s.kind == 'audio').toList();
     if (audios.isEmpty) {
@@ -56,6 +81,7 @@ class MediaStream {
     required this.codec,
     required this.urls,
     required this.headers,
+    this.bandwidth,
   });
 
   final String kind;
@@ -63,6 +89,7 @@ class MediaStream {
   final String codec;
   final List<String> urls;
   final Map<String, String> headers;
+  final int? bandwidth;
 
   bool get isVideo => kind == 'video';
 

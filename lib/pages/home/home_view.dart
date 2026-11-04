@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:material_3_expressive/material_3_expressive.dart';
@@ -7,6 +9,7 @@ import 'package:provider/provider.dart';
 
 import '../../stores/downloader_store.dart';
 import '../../theme/app_theme.dart';
+import '../result_page.dart';
 
 /// 首页：按 Figma 设计稿实现。
 class HomeView extends StatefulWidget {
@@ -36,23 +39,18 @@ class _HomeViewState extends State<HomeView> {
 
   Future<void> _parse() async {
     FocusScope.of(context).unfocus();
-    final controller = context.read<DownloaderStore>();
-    await controller.parse(_input.text);
-    if (!mounted) {
+    final text = _input.text.trim();
+    final messenger = ScaffoldMessenger.of(context);
+    if (text.isEmpty) {
+      messenger.showSnackBar(const SnackBar(content: Text('请先粘贴视频链接')));
       return;
     }
-    final messenger = ScaffoldMessenger.of(context);
-    if (controller.error != null) {
-      messenger.showSnackBar(SnackBar(content: Text(controller.error!)));
-    } else if (controller.source != null) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            '已解析：${controller.source!.title}（${controller.source!.parts.length} 个分P）',
-          ),
-        ),
-      );
-    }
+    // 立即跳转，解析在网络请求进行中完成，结果页展示骨架屏。
+    final store = context.read<DownloaderStore>();
+    unawaited(store.parse(text));
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (BuildContext context) => const ResultPage()),
+    );
   }
 
   @override

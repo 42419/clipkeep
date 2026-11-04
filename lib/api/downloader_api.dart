@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../utils/bdl_service.dart';
@@ -14,6 +15,20 @@ class DownloaderApi {
   final BdlService _bdl;
   final MediaDownloader _media;
 
+  final Dio _http = Dio(
+    BaseOptions(
+      connectTimeout: const Duration(seconds: 8),
+      receiveTimeout: const Duration(seconds: 8),
+      headers: const <String, String>{
+        'user-agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+                '(KHTML, like Gecko) Chrome/124 Safari/537.36',
+        'referer': 'https://www.bilibili.com/',
+        'accept': 'application/json, text/plain, */*',
+      },
+    ),
+  );
+
   Future<Result<ParsedSource>> parse(String input) async {
     final dir = await getApplicationSupportDirectory();
     final response = await _bdl.parse(
@@ -29,7 +44,7 @@ class DownloaderApi {
       return const Err(AppError('解析结果为空'));
     }
     try {
-      return Ok(_toParsedSource(data));
+      return Ok(await _toParsedSource(data));
     } catch (e) {
       return Err(AppError('解析结果格式异常', cause: e));
     }
@@ -37,12 +52,25 @@ class DownloaderApi {
 
   Future<Result<String>> download(
     MediaPart part, {
+    int? videoQuality,
+    bool audioOnly = false,
+    bool coverOnly = false,
+    bool saveCover = false,
+    String? coverUrl,
     void Function(double progress)? onProgress,
   }) {
-    return _media.download(part, onProgress: onProgress);
+    return _media.download(
+      part,
+      videoQuality: videoQuality,
+      audioOnly: audioOnly,
+      coverOnly: coverOnly,
+      saveCover: saveCover,
+      coverUrl: coverUrl,
+      onProgress: onProgress,
+    );
   }
 
-  ParsedSource _toParsedSource(Map<String, dynamic> tree) {
+  Future<ParsedSource> _toParsedSource(Map<String, dynamic> tree) async {
     final source =
         (tree['source'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
     final groups = (tree['groups'] as List?) ?? const <dynamic>[];
@@ -60,14 +88,43 @@ class DownloaderApi {
     for (final part in rawParts) {
       parts.add(_toPart((part as Map).cast<String, dynamic>()));
     }
+    final int? ownerMid = (first['owner_mid'] as num?)?.toInt();
+    final String? avatarUrl = await _fetchAvatar(ownerMid);
     return ParsedSource(
       title: (first['title'] as String?) ??
           (source['title'] as String?) ??
           '未知标题',
       author: (first['owner_name'] as String?) ?? '',
       coverUrl: first['cover_url'] as String?,
+      publishDate: first['publish_date'] as String?,
+      ownerMid: ownerMid,
+      authorAvatarUrl: avatarUrl,
       parts: parts,
     );
+  }
+
+  /// 用 UP 主 mid 调 B 站 card 接口取头像；失败不影响解析。
+  Future<String?> _fetchAvatar(int? mid) async {
+    if (mid == null) {
+      return null;
+    }
+    try {
+      final res = await _http.get<dynamic>(
+        'https://api.bilibili.com/x/web-interface/card',
+        queryParameters: <String, dynamic>{'mid': mid, 'photo': 'false'},
+      );
+      final data = res.data as Map?;
+      if (data != null && data['code'] == 0) {
+        final card = (data['data'] as Map?)?['card'] as Map?;
+        final face = card?['face'];
+        if (face is String && face.isNotEmpty) {
+          return face;
+        }
+      }
+    } catch (_) {
+      // 忽略：取头像失败时回退到图标
+    }
+    return null;
   }
 
   MediaPart _toPart(Map<String, dynamic> part) {
@@ -95,6 +152,7 @@ class DownloaderApi {
         codec: (streamMap['codec'] as String?) ?? '',
         urls: urls,
         headers: headers,
+        bandwidth: (streamMap['bandwidth'] as num?)?.toInt(),
       ));
     }
     return MediaPart(

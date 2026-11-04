@@ -24,7 +24,19 @@ class DownloaderStore extends ChangeNotifier {
   ParsedSource? get source => _source;
   String? get savedMessage => _savedMessage;
 
+  String? _lastInput;
+
+  String? get lastInput => _lastInput;
+
+  Future<void> retry() async {
+    final input = _lastInput;
+    if (input != null) {
+      await parse(input);
+    }
+  }
+
   Future<void> parse(String input) async {
+    _lastInput = input;
     _parsing = true;
     _error = null;
     _savedMessage = null;
@@ -40,18 +52,33 @@ class DownloaderStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> download(MediaPart part) async {
+  Future<void> download(
+    MediaPart part, {
+    int? videoQuality,
+    bool audioOnly = false,
+    bool coverOnly = false,
+    bool saveCover = false,
+    String? coverUrl,
+  }) async {
     _downloading = true;
     _progress = 0;
     _error = null;
     _savedMessage = null;
     notifyListeners();
-    final result = await _api.download(part, onProgress: (p) {
-      _progress = p;
-      notifyListeners();
-    });
+    final result = await _api.download(
+      part,
+      videoQuality: videoQuality,
+      audioOnly: audioOnly,
+      coverOnly: coverOnly,
+      saveCover: saveCover,
+      coverUrl: coverUrl,
+      onProgress: (p) {
+        _progress = p;
+        notifyListeners();
+      },
+    );
     if (result is Ok<String>) {
-      _savedMessage = '已保存到相册（ClipKeep）';
+      _savedMessage = result.value;
     } else if (result is Err<String>) {
       _error = result.error.message;
     }
