@@ -6,8 +6,9 @@ import 'package:ffmpeg_kit_flutter_new/return_code.dart';
 import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 
-import '../../../../core/result.dart';
-import '../../domain/entities/parsed_source.dart';
+import '../constants/app_constants.dart';
+import '../viewmodels/parsed_source.dart';
+import 'result.dart';
 
 /// 下载视频/音频流、用 ffmpeg 合并、并保存到相册。
 class MediaDownloader {
@@ -56,7 +57,7 @@ class MediaDownloader {
           return const Err(AppError('没有相册写入权限'));
         }
       }
-      await Gal.putVideo(outputPath, album: 'ClipKeep');
+      await Gal.putVideo(outputPath, album: AppConstants.albumName);
       onProgress?.call(1.0);
       await _cleanupQuietly([videoPath, audioPath, outputPath]);
       return Ok(outputPath);

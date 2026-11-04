@@ -1,19 +1,24 @@
-import '../../../../core/result.dart';
-import '../../../../ffi/bdl_service.dart';
-import '../../domain/entities/parsed_source.dart';
+import 'package:path_provider/path_provider.dart';
 
-/// 调用 Rust 侧 bdl_parse 并把 JSON 映射为领域模型。
-class BdlDataSource {
-  BdlDataSource(this._service, this._stateDirProvider);
+import '../utils/bdl_service.dart';
+import '../utils/media_downloader.dart';
+import '../utils/result.dart';
+import '../viewmodels/parsed_source.dart';
 
-  final BdlService _service;
-  final Future<String> Function() _stateDirProvider;
+/// 数据接口层：封装 B 站解析与媒体下载，供 Store 调用。
+class DownloaderApi {
+  DownloaderApi({BdlService? bdlService, MediaDownloader? mediaDownloader})
+      : _bdl = bdlService ?? const BdlService(),
+        _media = mediaDownloader ?? MediaDownloader();
+
+  final BdlService _bdl;
+  final MediaDownloader _media;
 
   Future<Result<ParsedSource>> parse(String input) async {
-    final stateDir = await _stateDirProvider();
-    final response = await _service.parse(
+    final dir = await getApplicationSupportDirectory();
+    final response = await _bdl.parse(
       input: input,
-      stateDir: stateDir,
+      stateDir: dir.path,
       withStreams: true,
     );
     if (!response.ok) {
@@ -24,13 +29,20 @@ class BdlDataSource {
       return const Err(AppError('解析结果为空'));
     }
     try {
-      return Ok(_mapTree(data));
+      return Ok(_toParsedSource(data));
     } catch (e) {
       return Err(AppError('解析结果格式异常', cause: e));
     }
   }
 
-  ParsedSource _mapTree(Map<String, dynamic> tree) {
+  Future<Result<String>> download(
+    MediaPart part, {
+    void Function(double progress)? onProgress,
+  }) {
+    return _media.download(part, onProgress: onProgress);
+  }
+
+  ParsedSource _toParsedSource(Map<String, dynamic> tree) {
     final source =
         (tree['source'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
     final groups = (tree['groups'] as List?) ?? const <dynamic>[];
@@ -46,7 +58,7 @@ class BdlDataSource {
     final parts = <MediaPart>[];
     final rawParts = (first['parts'] as List?) ?? const <dynamic>[];
     for (final part in rawParts) {
-      parts.add(_mapPart((part as Map).cast<String, dynamic>()));
+      parts.add(_toPart((part as Map).cast<String, dynamic>()));
     }
     return ParsedSource(
       title: (first['title'] as String?) ??
@@ -58,7 +70,7 @@ class BdlDataSource {
     );
   }
 
-  MediaPart _mapPart(Map<String, dynamic> part) {
+  MediaPart _toPart(Map<String, dynamic> part) {
     final streams = <MediaStream>[];
     final rawStreams = (part['streams'] as List?) ?? const <dynamic>[];
     for (final stream in rawStreams) {

@@ -1,13 +1,14 @@
 import 'package:flutter/foundation.dart';
 
-import '../../../../core/result.dart';
-import '../../domain/entities/parsed_source.dart';
-import '../../domain/repositories/downloader_repository.dart';
+import '../api/downloader_api.dart';
+import '../utils/result.dart';
+import '../viewmodels/parsed_source.dart';
 
-class DownloaderController extends ChangeNotifier {
-  DownloaderController(this._repository);
+/// 状态管理（Provider + ChangeNotifier）。
+class DownloaderStore extends ChangeNotifier {
+  DownloaderStore(this._api);
 
-  final DownloaderRepository _repository;
+  final DownloaderApi _api;
 
   bool _parsing = false;
   bool _downloading = false;
@@ -28,7 +29,7 @@ class DownloaderController extends ChangeNotifier {
     _error = null;
     _savedMessage = null;
     notifyListeners();
-    final result = await _repository.parse(input);
+    final result = await _api.parse(input);
     if (result is Ok<ParsedSource>) {
       _source = result.value;
     } else if (result is Err<ParsedSource>) {
@@ -45,7 +46,7 @@ class DownloaderController extends ChangeNotifier {
     _error = null;
     _savedMessage = null;
     notifyListeners();
-    final result = await _repository.download(part, onProgress: (p) {
+    final result = await _api.download(part, onProgress: (p) {
       _progress = p;
       notifyListeners();
     });

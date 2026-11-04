@@ -45,6 +45,7 @@ dependencies:
   material_3_expressive: ^1.2.0
   dynamic_color: ^2.1.0
   material_ui: ^1.10.0
+  font_awesome_flutter: ^11.0.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
