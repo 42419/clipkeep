@@ -50,7 +50,7 @@ class DownloaderController extends ChangeNotifier {
       notifyListeners();
     });
     if (result is Ok<String>) {
-      _savedMessage = '已保存到相册：${result.value}';
+      _savedMessage = '已保存到相册（ClipKeep）';
     } else if (result is Err<String>) {
       _error = result.error.message;
     }

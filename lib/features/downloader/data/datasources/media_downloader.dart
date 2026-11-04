@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new/return_code.dart';
@@ -24,7 +26,8 @@ class MediaDownloader {
     final audio = part.pickAudio();
     final hasAudio = audio != null && audio.primaryUrl.isNotEmpty;
     try {
-      final dir = await getTemporaryDirectory();
+      final dir = await getExternalStorageDirectory() ??
+          await getApplicationDocumentsDirectory();
       final stamp = DateTime.now().millisecondsSinceEpoch.toString();
       final videoPath = '${dir.path}/clipkeep_v_$stamp.m4s';
       final audioPath = '${dir.path}/clipkeep_a_$stamp.m4s';
@@ -55,11 +58,26 @@ class MediaDownloader {
       }
       await Gal.putVideo(outputPath, album: 'ClipKeep');
       onProgress?.call(1.0);
+      await _cleanupQuietly([videoPath, audioPath, outputPath]);
       return Ok(outputPath);
     } on GalException catch (e) {
       return Err(AppError('保存到相册失败', cause: e));
     } catch (e) {
       return Err(AppError('下载失败', cause: e));
+    }
+  }
+
+  /// 导入相册后删除下载/合并的临时文件，只保留相册中的副本。
+  Future<void> _cleanupQuietly(List<String> paths) async {
+    for (final path in paths) {
+      try {
+        final file = File(path);
+        if (await file.exists()) {
+          await file.delete();
+        }
+      } catch (_) {
+        // 清理失败不影响主流程。
+      }
     }
   }
 
