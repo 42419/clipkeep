@@ -42,6 +42,7 @@ class _HomeViewState extends State<HomeView> {
     final text = _input.text.trim();
     final messenger = ScaffoldMessenger.of(context);
     if (text.isEmpty) {
+      messenger.clearSnackBars();
       messenger.showSnackBar(const SnackBar(content: Text('请先粘贴视频链接')));
       return;
     }

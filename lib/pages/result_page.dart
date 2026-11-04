@@ -712,12 +712,14 @@ class _ResultPageState extends State<ResultPage> {
       return;
     }
     final String message = store.error ?? store.savedMessage ?? '完成';
+    messenger.clearSnackBars();
     messenger.showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _notify(String message) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearSnackBars();
+    messenger.showSnackBar(SnackBar(content: Text(message)));
   }
 
   String _formatDuration(int? seconds) {
