@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+import 'package:material_3_expressive/material_3_expressive.dart';
+import 'package:material_ui/material_ui.dart' hide CornerRounding, RoundedPolygon;
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
@@ -27,12 +28,13 @@ class ClipKeepApp extends StatelessWidget {
     );
     return ChangeNotifierProvider<DownloaderController>(
       create: (_) => DownloaderController(repository),
-      child: MaterialApp(
+      // MD3 Expressive；dynamicColoring 让配色跟随系统壁纸（Material You）。
+      child: M3EMaterialApp(
         title: 'ClipKeep',
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-          useMaterial3: true,
-        ),
+        debugShowCheckedModeBanner: false,
+        dynamicColoring: true,
+        autoTheming: true,
+        data: M3EThemeData.light(seedColor: Colors.deepPurple),
         home: const DownloaderPage(),
       ),
     );
