@@ -25,6 +25,44 @@ class _DownloadsViewState extends State<DownloadsView> {
   };
 
   int _tab = 0;
+  final ScrollController _scroll = ScrollController();
+  bool _showClearFab = true;
+  double _lastOffset = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scroll
+      ..removeListener(_onScroll)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scroll.hasClients) {
+      return;
+    }
+    final double offset = _scroll.offset;
+    if (offset <= 0) {
+      _setFab(true);
+    } else if (offset - _lastOffset > 4) {
+      _setFab(false);
+    } else if (_lastOffset - offset > 4) {
+      _setFab(true);
+    }
+    _lastOffset = offset;
+  }
+
+  void _setFab(bool visible) {
+    if (_showClearFab != visible) {
+      setState(() => _showClearFab = visible);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -55,7 +93,11 @@ class _DownloadsViewState extends State<DownloadsView> {
                 spacing: 5,
                 onSelectedIndexChanged: (int? index) {
                   if (index != null) {
-                    setState(() => _tab = index);
+                    setState(() {
+                      _tab = index;
+                      _showClearFab = true;
+                      _lastOffset = 0;
+                    });
                   }
                 },
                 actions: <M3EButtonGroupAction>[
@@ -74,6 +116,7 @@ class _DownloadsViewState extends State<DownloadsView> {
               child: tasks.isEmpty
                   ? _buildEmpty(theme, scheme)
                   : ListView.separated(
+                      controller: _scroll,
                       padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
                       itemCount: tasks.length,
                       separatorBuilder: (_, _) => const SizedBox(height: 12),
@@ -91,6 +134,22 @@ class _DownloadsViewState extends State<DownloadsView> {
           ],
         ),
       ),
+      floatingActionButton: _tab == 1 && store.completedCount > 0
+          ? AnimatedSlide(
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeOutCubic,
+              offset: _showClearFab ? Offset.zero : const Offset(0, 1.5),
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 250),
+                opacity: _showClearFab ? 1 : 0,
+                child: M3EFab(
+                  onPressed: () => _confirmClearCompleted(store),
+                  icon: const Icon(Icons.delete_outline),
+                  tooltip: '清空已完成',
+                ),
+              ),
+            )
+          : null,
     );
   }
 
@@ -110,12 +169,6 @@ class _DownloadsViewState extends State<DownloadsView> {
                 fontWeight: FontWeight.w700,
               ),
             ),
-          ),
-          M3EIconButton(
-            icon: const Icon(Icons.delete_outline),
-            variant: M3EIconButtonVariant.tonal,
-            tooltip: '清空已完成',
-            onPressed: () => _confirmClearCompleted(store),
           ),
         ],
       ),
@@ -244,6 +297,7 @@ class _DownloadsViewState extends State<DownloadsView> {
               _statsText(task),
               style: theme.textTheme.bodySmall?.copyWith(
                 color: scheme.onSurfaceVariant,
+                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
               ),
             ),
           ),
@@ -366,6 +420,9 @@ class _DownloadsViewState extends State<DownloadsView> {
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: scheme.onSurfaceVariant,
+                    fontFeatures: const <FontFeature>[
+                      FontFeature.tabularFigures(),
+                    ],
                   ),
                 ),
               ],

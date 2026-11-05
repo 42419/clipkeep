@@ -423,6 +423,9 @@ class _ResultPageState extends State<ResultPage> {
                 meta,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: scheme.onSurfaceVariant,
+                  fontFeatures: const <FontFeature>[
+                    FontFeature.tabularFigures(),
+                  ],
                 ),
               ),
             ],
@@ -751,7 +754,12 @@ class _ResultPageState extends State<ResultPage> {
               enabled: !disabled,
               size: M3EButtonSize.md,
               icon: const Icon(Icons.download),
-              label: Text(label),
+              label: Text(
+                label,
+                style: const TextStyle(
+                  fontFeatures: <FontFeature>[FontFeature.tabularFigures()],
+                ),
+              ),
               tooltip: '开始下载',
             ),
           ),
