@@ -9,6 +9,7 @@ import 'package:ffmpeg_kit_flutter_new/return_code.dart';
 import 'package:ffmpeg_kit_flutter_new/statistics.dart';
 import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants/app_constants.dart';
 import '../viewmodels/download_task.dart';
@@ -65,6 +66,13 @@ class MediaDownloader {
     void Function(DownloadProgress progress)? onProgress,
   }) async {
     _cookie = cookie;
+    bool saveToGallery = true;
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      saveToGallery = prefs.getBool(AppConstants.prefSaveToGallery) ?? true;
+    } catch (_) {
+      // 读取失败默认保存到相册。
+    }
     try {
       final dir =
           await getExternalStorageDirectory() ??
@@ -98,6 +106,7 @@ class MediaDownloader {
         dir.path,
         stamp,
         videoQuality: videoQuality,
+        saveToGallery: saveToGallery,
         saveCover: saveCover,
         coverUrl: coverUrl,
         agg: agg,
@@ -116,6 +125,7 @@ class MediaDownloader {
     String dirPath,
     String stamp, {
     int? videoQuality,
+    required bool saveToGallery,
     required bool saveCover,
     String? coverUrl,
     required _ByteAggregator agg,
@@ -204,6 +214,22 @@ class MediaDownloader {
       return Err(AppError('音视频合并失败', cause: logs));
     }
 
+    final int outLen = await File(outputPath).length();
+    onProgress?.call(
+      DownloadProgress(fraction: 1, receivedBytes: outLen, totalBytes: outLen),
+    );
+
+    if (!saveToGallery) {
+      final Directory outDir = Directory('$dirPath/ClipKeep');
+      if (!await outDir.exists()) {
+        await outDir.create(recursive: true);
+      }
+      final String finalPath = '${outDir.path}/ClipKeep_$stamp.mp4';
+      await _moveFile(outputPath, finalPath);
+      await _cleanupQuietly(<String>[videoPath, audioPath]);
+      return Ok('已保存到 下载/ClipKeep：$finalPath');
+    }
+
     if (!await _ensureGalleryAccess()) {
       await _cleanupQuietly(<String>[outputPath]);
       return const Err(AppError('没有相册写入权限'));
@@ -214,10 +240,6 @@ class MediaDownloader {
     if (saveCover) {
       coverSaved = await _saveCover(coverUrl, dirPath, stamp);
     }
-    final int outLen = await File(outputPath).length();
-    onProgress?.call(
-      DownloadProgress(fraction: 1, receivedBytes: outLen, totalBytes: outLen),
-    );
     await _cleanupQuietly(<String>[videoPath, audioPath, outputPath]);
     return Ok(coverSaved ? '已保存视频与封面（ClipKeep）' : '已保存到相册（ClipKeep）');
   }
@@ -400,6 +422,19 @@ class MediaDownloader {
       } catch (_) {
         // 清理失败不影响主流程。
       }
+    }
+  }
+
+  Future<void> _moveFile(String from, String to) async {
+    final File target = File(to);
+    if (await target.exists()) {
+      await target.delete();
+    }
+    try {
+      await File(from).rename(to);
+    } catch (_) {
+      await File(from).copy(to);
+      await _cleanupQuietly(<String>[from]);
     }
   }
 

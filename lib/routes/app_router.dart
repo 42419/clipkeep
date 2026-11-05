@@ -8,6 +8,7 @@ import '../pages/main_page.dart';
 import '../stores/auth_store.dart';
 import '../stores/downloader_store.dart';
 import '../stores/main_tab_controller.dart';
+import '../stores/settings_store.dart';
 import '../theme/app_theme.dart';
 
 /// 应用根 Widget：注入 Provider + M3E 主题 + 命名路由。
@@ -24,15 +25,22 @@ Widget getRootWidget() {
       ChangeNotifierProvider<MainTabController>(
         create: (_) => MainTabController(),
       ),
+      ChangeNotifierProvider<SettingsStore>(
+        create: (_) => SettingsStore()..load(),
+      ),
     ],
-    child: M3EMaterialApp(
-      title: 'ClipKeep',
-      debugShowCheckedModeBanner: false,
-      dynamicColoring: true,
-      autoTheming: true,
-      data: AppTheme.light(),
-      home: const MainPage(),
-      routes: getRootRoute(),
+    child: Consumer<SettingsStore>(
+      builder: (BuildContext context, SettingsStore settings, Widget? child) {
+        return M3EMaterialApp(
+          title: 'ClipKeep',
+          debugShowCheckedModeBanner: false,
+          dynamicColoring: settings.dynamicColor,
+          autoTheming: true,
+          data: AppTheme.light(),
+          home: const MainPage(),
+          routes: getRootRoute(),
+        );
+      },
     ),
   );
 }

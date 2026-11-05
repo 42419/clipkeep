@@ -55,9 +55,11 @@ class AuthStore extends ChangeNotifier {
   int? _mid;
   bool _vip = false;
   bool _ready = false;
+  DateTime? _cookieExpiresAt;
 
   bool get ready => _ready;
   String? get cookie => _cookie;
+  DateTime? get cookieExpiresAt => _cookieExpiresAt;
   String? get uname => _uname;
   String? get face => _face;
   int? get mid => _mid;
@@ -67,6 +69,7 @@ class AuthStore extends ChangeNotifier {
   Future<void> load() async {
     try {
       _cookie = await _storage.read(key: _kCookie);
+      _cookieExpiresAt = parseSessdataExpiry(_cookie);
       _uname = await _storage.read(key: _kUname);
       _face = await _storage.read(key: _kFace);
       final String? midText = await _storage.read(key: _kMid);
@@ -90,6 +93,7 @@ class AuthStore extends ChangeNotifier {
       return false;
     }
     _cookie = cookie;
+    _cookieExpiresAt = parseSessdataExpiry(cookie);
     _uname = profile.uname;
     _face = profile.face;
     _mid = profile.mid;
@@ -123,6 +127,7 @@ class AuthStore extends ChangeNotifier {
 
   Future<void> logout() async {
     _cookie = null;
+    _cookieExpiresAt = null;
     _uname = null;
     _face = null;
     _mid = null;
@@ -178,6 +183,42 @@ class AuthStore extends ChangeNotifier {
         }
       }
       return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 从 SESSDATA 解析过期时间：URL 解码后形如 `<token>,<expiry_unix>,<suffix>`。
+  /// 读 cookie 值本身（参考 Douyin_TikTok_Download_API 的做法），不依赖 Expires 属性。
+  static DateTime? parseSessdataExpiry(String? cookie) {
+    if (cookie == null || cookie.isEmpty) {
+      return null;
+    }
+    final RegExpMatch? entry = RegExp(r'(?:^|;\s*)SESSDATA=([^;]*)')
+        .firstMatch(cookie);
+    if (entry == null) {
+      return null;
+    }
+    String value;
+    try {
+      value = Uri.decodeComponent(entry.group(1)!);
+    } catch (_) {
+      value = entry.group(1)!;
+    }
+    final RegExpMatch? match = RegExp(r'^([^,]+),(\d+),(.*)$')
+        .firstMatch(value);
+    if (match == null) {
+      return null;
+    }
+    final int? seconds = int.tryParse(match.group(2)!);
+    if (seconds == null || seconds <= 0) {
+      return null;
+    }
+    try {
+      return DateTime.fromMillisecondsSinceEpoch(
+        seconds * 1000,
+        isUtc: true,
+      ).toLocal();
     } catch (_) {
       return null;
     }
