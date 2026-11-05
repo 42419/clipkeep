@@ -480,27 +480,24 @@ class _DownloadsViewState extends State<DownloadsView> {
                 fallback,
           );
     final String? local = task.thumbnailPath;
-    if (local != null && local.isNotEmpty) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(18),
-        child: Image.file(
-          File(local),
-          width: 56,
-          height: 56,
-          fit: BoxFit.cover,
-          errorBuilder: (
-            BuildContext context,
-            Object error,
-            StackTrace? stackTrace,
-          ) =>
-              ClipRRect(
-            borderRadius: BorderRadius.circular(18),
-            child: network,
-          ),
-        ),
-      );
-    }
-    return network;
+    final Widget image = (local != null && local.isNotEmpty)
+        ? Image.file(
+            File(local),
+            width: 56,
+            height: 56,
+            fit: BoxFit.cover,
+            errorBuilder: (
+              BuildContext context,
+              Object error,
+              StackTrace? stackTrace,
+            ) =>
+                network,
+          )
+        : network;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: image,
+    );
   }
 
   String? _normalizeUrl(String? raw) {
@@ -524,6 +521,10 @@ class _DownloadsViewState extends State<DownloadsView> {
   }
 
   String _statsText(DownloadTask task) {
+    final String? phase = task.phase;
+    if (phase != null && phase.isNotEmpty) {
+      return phase;
+    }
     final List<String> parts = <String>[];
     if (task.totalBytes > 0) {
       parts.add('${formatBytes(task.receivedBytes)} / ${formatBytes(task.totalBytes)}');

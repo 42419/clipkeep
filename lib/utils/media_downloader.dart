@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_new/ffmpeg_session.dart';
 import 'package:ffmpeg_kit_flutter_new/return_code.dart';
+import 'package:ffmpeg_kit_flutter_new/statistics.dart';
 import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -113,6 +116,9 @@ class MediaDownloader {
     final audioPath = '$dirPath/clipkeep_a_$stamp.m4s';
     final outputPath = '$dirPath/clipkeep_$stamp.mp4';
 
+    // 下载阶段占 0~90%，合并阶段占 90~100%。
+    agg.scale = 0.9;
+
     await Future.wait(<Future<void>>[
       _downloadStream(
         video,
@@ -136,15 +142,49 @@ class MediaDownloader {
     if (hasAudio) {
       agg.finishStreamKey('audio');
     }
-    onProgress?.call(agg.snapshot(fallback: 0.9));
+    final DownloadProgress beforeMerge = agg.snapshot();
+    onProgress?.call(
+      DownloadProgress(
+        fraction: 0.9,
+        receivedBytes: beforeMerge.receivedBytes,
+        totalBytes: beforeMerge.totalBytes,
+        phase: '正在合并音视频…',
+      ),
+    );
 
     final command = hasAudio
         ? '-y -i "$videoPath" -i "$audioPath" -c copy -map 0:v:0 -map 1:a:0 "$outputPath"'
         : '-y -i "$videoPath" -c copy "$outputPath"';
-    final session = await FFmpegKit.execute(command);
-    final returnCode = await session.getReturnCode();
+    final Completer<ReturnCode?> merge = Completer<ReturnCode?>();
+    final int totalMs = ((part.durationSeconds ?? 0) * 1000).round();
+    final FFmpegSession session = await FFmpegKit.executeAsync(
+      command,
+      (FFmpegSession session) async {
+        final ReturnCode? code = await session.getReturnCode();
+        if (!merge.isCompleted) {
+          merge.complete(code);
+        }
+      },
+      null,
+      (Statistics stats) {
+        if (totalMs <= 0 || merge.isCompleted) {
+          return;
+        }
+        final double ratio = (stats.getTime() / totalMs).clamp(0.0, 1.0);
+        final DownloadProgress base = agg.snapshot();
+        onProgress?.call(
+          DownloadProgress(
+            fraction: 0.9 + 0.1 * ratio,
+            receivedBytes: base.receivedBytes,
+            totalBytes: base.totalBytes,
+            phase: '正在合并音视频…',
+          ),
+        );
+      },
+    );
+    final ReturnCode? returnCode = await merge.future;
     if (!ReturnCode.isSuccess(returnCode)) {
-      final logs = await session.getOutput();
+      final String? logs = await session.getOutput();
       await _cleanupQuietly(<String>[videoPath, audioPath, outputPath]);
       return Err(AppError('音视频合并失败', cause: logs));
     }
@@ -497,6 +537,7 @@ class MediaDownloader {
 
 /// 汇总多个并发流（视频 + 音频）的字节进度。
 class _ByteAggregator {
+  double scale = 1.0;
   int _finished = 0;
   final Map<String, int> _recv = <String, int>{};
   final Map<String, int> _tot = <String, int>{};
@@ -536,7 +577,7 @@ class _ByteAggregator {
     final double speed = elapsed > 0 ? received / elapsed : 0;
     double fraction;
     if (total > 0) {
-      fraction = received / total;
+      fraction = (received / total) * scale;
     } else {
       fraction = fallback ?? 0;
     }

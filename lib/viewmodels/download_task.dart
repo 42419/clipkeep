@@ -10,12 +10,16 @@ class DownloadProgress {
     this.receivedBytes = 0,
     this.totalBytes = 0,
     this.speedBytesPerSec = 0,
+    this.phase,
   });
 
   final double fraction;
   final int receivedBytes;
   final int totalBytes;
   final double speedBytesPerSec;
+
+  /// 非空表示当前处于特殊阶段（如「正在合并音视频…」）。
+  final String? phase;
 }
 
 /// 一条下载任务（进行中/暂停/失败/已完成）。
@@ -40,6 +44,7 @@ class DownloadTask {
     this.error,
     this.savedMessage,
     this.thumbnailPath,
+    this.phase,
   });
 
   final String id;
@@ -62,6 +67,7 @@ class DownloadTask {
   String? error;
   String? savedMessage;
   String? thumbnailPath;
+  String? phase;
 
   bool get isActive =>
       status == DownloadStatus.downloading || status == DownloadStatus.paused;

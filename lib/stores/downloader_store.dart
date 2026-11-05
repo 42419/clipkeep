@@ -151,6 +151,7 @@ class DownloaderStore extends ChangeNotifier {
         task.receivedBytes = p.receivedBytes;
         task.totalBytes = p.totalBytes;
         task.speedBytesPerSec = p.speedBytesPerSec;
+        task.phase = p.phase;
         notifyListeners();
       },
     );
@@ -162,10 +163,12 @@ class DownloaderStore extends ChangeNotifier {
     if (result is Ok<String>) {
       task.status = DownloadStatus.completed;
       task.progress = 1;
+      task.phase = null;
       task.savedMessage = result.value;
       task.thumbnailPath = await _api.cacheCover(task.coverUrl, task.id);
       unawaited(_persistCompleted());
     } else if (result is Err<String>) {
+      task.phase = null;
       task.status = DownloadStatus.failed;
       task.error = result.error.message;
     }
