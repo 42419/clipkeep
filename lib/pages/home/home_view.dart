@@ -86,7 +86,7 @@ class _HomeViewState extends State<HomeView> {
             _buildPasteCard(theme, scheme, controller),
             const SizedBox(height: AppTheme.gap),
             _buildLoginCard(theme, scheme),
-            const SizedBox(height: AppTheme.gap),
+            const SizedBox(height: 24),
             _buildRecent(theme, scheme, controller),
           ],
         ),
@@ -122,11 +122,12 @@ class _HomeViewState extends State<HomeView> {
           ),
           M3EShapeContainer(
             kind: M3EShapeKind.cookie12Sided,
-            height: 56,
-            width: 56,
+            height: 48,
+            width: 48,
             color: scheme.tertiaryContainer,
             child: Icon(
-              Icons.file_download_outlined,
+              Icons.download_rounded,
+              size: 22,
               color: scheme.onTertiaryContainer,
             ),
           ),
@@ -141,7 +142,7 @@ class _HomeViewState extends State<HomeView> {
     DownloaderStore controller,
   ) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: scheme.primaryContainer,
         borderRadius: BorderRadius.circular(AppTheme.radiusXl),
@@ -156,10 +157,10 @@ class _HomeViewState extends State<HomeView> {
               color: scheme.onPrimaryContainer,
             ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           Container(
-            height: 60,
-            padding: const EdgeInsets.only(left: 20, right: 8),
+            height: 56,
+            padding: const EdgeInsets.only(left: 16, right: 8),
             decoration: BoxDecoration(
               color: scheme.surfaceContainerLowest,
               borderRadius: BorderRadius.circular(AppTheme.radiusMd),
@@ -193,7 +194,7 @@ class _HomeViewState extends State<HomeView> {
               ],
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
           M3EButtonGroup(
             type: M3EButtonGroupType.standard,
             direction: Axis.horizontal,
@@ -226,7 +227,7 @@ class _HomeViewState extends State<HomeView> {
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
             child: M3EButton(
@@ -248,18 +249,22 @@ class _HomeViewState extends State<HomeView> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHigh,
+        color: scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(AppTheme.radiusLg),
       ),
       child: Row(
         children: <Widget>[
           M3EShapeContainer(
             kind: M3EShapeKind.cookie9Sided,
-            height: 52,
-            width: 52,
-            color: Color(0xFFF2A0A8),
+            height: 48,
+            width: 48,
+            color: const Color(0xFFF2A0A8),
             child: Center(
-              child: FaIcon(FontAwesomeIcons.bilibili, color: Colors.white),
+              child: FaIcon(
+                FontAwesomeIcons.bilibili,
+                color: Colors.white,
+                size: 20,
+              ),
             ),
           ),
           const SizedBox(width: 14),
@@ -288,6 +293,7 @@ class _HomeViewState extends State<HomeView> {
             tooltip: '登录',
             icon: const Icon(Icons.login),
             label: const Text('登录'),
+            size: M3EButtonSize.sm,
             style: M3EButtonStyle.tonal,
           ),
         ],
@@ -327,13 +333,40 @@ class _HomeViewState extends State<HomeView> {
         ),
         const SizedBox(height: 8),
         if (tasks.isEmpty)
-          Padding(
-            padding: const EdgeInsets.only(left: 8),
-            child: Text(
-              '还没有下载记录',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: scheme.onSurfaceVariant,
-              ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+            ),
+            child: Row(
+              children: <Widget>[
+                Icon(
+                  Icons.video_library_outlined,
+                  color: scheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        '还没有下载记录',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '解析并下载后，这里会显示最近的视频',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           )
         else
