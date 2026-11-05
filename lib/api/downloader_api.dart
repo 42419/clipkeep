@@ -1,9 +1,12 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../utils/bdl_service.dart';
 import '../utils/media_downloader.dart';
 import '../utils/result.dart';
+import '../viewmodels/download_task.dart';
 import '../viewmodels/parsed_source.dart';
 
 /// 数据接口层：封装 B 站解析与媒体下载，供 Store 调用。
@@ -49,6 +52,68 @@ class DownloaderApi {
     } catch (e) {
       return Err(AppError('解析结果格式异常', cause: e));
     }
+  }
+
+  static const Map<String, String> _imageHeaders = <String, String>{
+    'referer': 'https://www.bilibili.com/',
+    'user-agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
+        '(KHTML, like Gecko) Chrome/124 Mobile Safari/537.36',
+  };
+
+  /// 把封面缓存到本地 App 私有目录，返回本地路径（失败返回 null）。
+  Future<String?> cacheCover(String? coverUrl, String id) async {
+    final String? url = _normalizeImageUrl(coverUrl);
+    if (url == null) {
+      return null;
+    }
+    try {
+      final Directory dir = await getApplicationSupportDirectory();
+      final Directory covers = Directory('${dir.path}/covers');
+      if (!await covers.exists()) {
+        await covers.create(recursive: true);
+      }
+      final String path = '${covers.path}/$id.jpg';
+      final File file = File(path);
+      if (await file.exists() && await file.length() > 0) {
+        return path;
+      }
+      final Response<List<int>> res = await _http.get<List<int>>(
+        url,
+        options: Options(
+          responseType: ResponseType.bytes,
+          headers: _imageHeaders,
+          receiveTimeout: const Duration(seconds: 30),
+        ),
+      );
+      final List<int>? data = res.data;
+      if (data == null || data.isEmpty) {
+        return null;
+      }
+      await file.writeAsBytes(data);
+      return path;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String? _normalizeImageUrl(String? raw) {
+    if (raw == null) {
+      return null;
+    }
+    final String v = raw.trim();
+    if (v.isEmpty) {
+      return null;
+    }
+    if (v.startsWith('//')) {
+      return 'https:$v';
+    }
+    if (v.startsWith('http://')) {
+      return 'https://${v.substring(7)}';
+    }
+    if (v.startsWith('https://')) {
+      return v;
+    }
+    return 'https://$v';
   }
 
   static final RegExp _urlPattern = RegExp(r'https?://[^\s]+');
@@ -107,7 +172,8 @@ class DownloaderApi {
     bool coverOnly = false,
     bool saveCover = false,
     String? coverUrl,
-    void Function(double progress)? onProgress,
+    CancelToken? cancelToken,
+    void Function(DownloadProgress progress)? onProgress,
   }) {
     return _media.download(
       part,
@@ -116,6 +182,7 @@ class DownloaderApi {
       coverOnly: coverOnly,
       saveCover: saveCover,
       coverUrl: coverUrl,
+      cancelToken: cancelToken,
       onProgress: onProgress,
     );
   }

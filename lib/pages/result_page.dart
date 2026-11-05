@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../stores/downloader_store.dart';
 import '../theme/app_theme.dart';
+import '../viewmodels/download_task.dart';
 import '../viewmodels/parsed_source.dart';
 
 /// 二级页面：解析结果（含加载骨架屏 / 错误态）。
@@ -27,6 +28,7 @@ class _ResultPageState extends State<ResultPage> {
   bool _audioOnly = false;
   bool _coverOnly = false;
   bool _videoWithCover = false;
+  String? _activeTaskId;
 
   @override
   Widget build(BuildContext context) {
@@ -702,10 +704,14 @@ class _ResultPageState extends State<ResultPage> {
 
   Widget _buildBottomBar(ThemeData theme, ColorScheme scheme, MediaPart? part) {
     final store = context.watch<DownloaderStore>();
-    final bool downloading = store.downloading;
-    final double progress = store.progress.clamp(0.0, 1.0);
-    final bool disabled = part == null || downloading;
-    final String label = downloading
+    final DownloadTask? task =
+        _activeTaskId == null ? null : store.taskById(_activeTaskId!);
+    final bool active = task != null &&
+        (task.status == DownloadStatus.downloading ||
+            task.status == DownloadStatus.paused);
+    final double progress = task?.progress ?? 0;
+    final bool disabled = part == null || active;
+    final String label = active
         ? '下载中 ${(progress * 100).toStringAsFixed(0)}%'
         : '开始下载';
     return Container(
@@ -717,7 +723,7 @@ class _ResultPageState extends State<ResultPage> {
           AnimatedSize(
             duration: const Duration(milliseconds: 250),
             curve: Curves.easeOutCubic,
-            child: downloading
+            child: active
                 ? Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: SizedBox(
@@ -761,20 +767,29 @@ class _ResultPageState extends State<ResultPage> {
     final int? quality = qualities.isEmpty
         ? null
         : qualities[_qualityIndex.clamp(0, qualities.length - 1)];
-    await store.download(
+    final String qualityText = quality == null ? '视频' : qualityLabel(quality);
+    final String qLabel = _audioOnly
+        ? '仅音频'
+        : _coverOnly
+            ? '仅封面'
+            : _videoWithCover
+                ? '$qualityText + 封面'
+                : qualityText;
+    final DownloadTask task = store.startDownload(
       part,
+      title: store.source?.title ?? part.title,
+      qualityLabel: qLabel,
       videoQuality: (_audioOnly || _coverOnly) ? null : quality,
       audioOnly: _audioOnly,
       coverOnly: _coverOnly,
       saveCover: _videoWithCover,
       coverUrl: store.source?.coverUrl,
     );
-    if (!mounted) {
-      return;
-    }
-    final String message = store.error ?? store.savedMessage ?? '完成';
+    setState(() => _activeTaskId = task.id);
     messenger.clearSnackBars();
-    messenger.showSnackBar(SnackBar(content: Text(message)));
+    messenger.showSnackBar(
+      const SnackBar(content: Text('已开始下载，可在「下载」页查看进度')),
+    );
   }
 
   void _notify(String message) {

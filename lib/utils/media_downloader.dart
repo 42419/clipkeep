@@ -8,23 +8,21 @@ import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../constants/app_constants.dart';
+import '../viewmodels/download_task.dart';
 import '../viewmodels/parsed_source.dart';
 import 'result.dart';
 
-/// 下载视频/音频流，支持按画质选择、仅音频、保存封面，并保存到相册。
+/// 下载视频/音频流，支持按画质、仅音频、仅封面、视频+封面，并保存到相册/下载目录。
 class MediaDownloader {
   MediaDownloader({Dio? dio}) : _dio = dio ?? Dio();
 
   final Dio _dio;
 
-  static const MethodChannel _mediaStore = MethodChannel(
-    'clipkeep/media_store',
-  );
+  static const MethodChannel _mediaStore = MethodChannel('clipkeep/media_store');
 
   static const Map<String, String> _imageHeaders = <String, String>{
     'referer': 'https://www.bilibili.com/',
-    'user-agent':
-        'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
+    'user-agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
         '(KHTML, like Gecko) Chrome/124 Mobile Safari/537.36',
   };
 
@@ -35,19 +33,23 @@ class MediaDownloader {
     bool coverOnly = false,
     bool saveCover = false,
     String? coverUrl,
-    void Function(double progress)? onProgress,
+    CancelToken? cancelToken,
+    void Function(DownloadProgress progress)? onProgress,
   }) async {
     try {
       final dir =
           await getExternalStorageDirectory() ??
           await getApplicationDocumentsDirectory();
       final stamp = DateTime.now().millisecondsSinceEpoch.toString();
+      final agg = _ByteAggregator();
       if (coverOnly) {
         return await _downloadCoverOnly(
           coverUrl,
           dir.path,
           stamp,
-          onProgress: onProgress,
+          agg,
+          cancelToken,
+          onProgress,
         );
       }
       if (audioOnly) {
@@ -55,9 +57,9 @@ class MediaDownloader {
           part,
           dir.path,
           stamp,
-          coverUrl: coverUrl,
-          saveCover: saveCover,
-          onProgress: onProgress,
+          agg,
+          cancelToken,
+          onProgress,
         );
       }
       return await _downloadVideo(
@@ -65,8 +67,10 @@ class MediaDownloader {
         dir.path,
         stamp,
         videoQuality: videoQuality,
-        coverUrl: coverUrl,
         saveCover: saveCover,
+        coverUrl: coverUrl,
+        agg: agg,
+        cancelToken: cancelToken,
         onProgress: onProgress,
       );
     } on GalException catch (e) {
@@ -81,9 +85,11 @@ class MediaDownloader {
     String dirPath,
     String stamp, {
     int? videoQuality,
-    String? coverUrl,
     required bool saveCover,
-    void Function(double progress)? onProgress,
+    String? coverUrl,
+    required _ByteAggregator agg,
+    CancelToken? cancelToken,
+    void Function(DownloadProgress progress)? onProgress,
   }) async {
     final video = part.pickVideoQuality(videoQuality);
     if (video == null || video.primaryUrl.isEmpty) {
@@ -95,15 +101,13 @@ class MediaDownloader {
     final audioPath = '$dirPath/clipkeep_a_$stamp.m4s';
     final outputPath = '$dirPath/clipkeep_$stamp.mp4';
 
-    await _downloadStream(video, videoPath, (p) => onProgress?.call(p * 0.5));
+    await _downloadStream(video, videoPath, agg, cancelToken, onProgress);
+    agg.finishStream();
     if (hasAudio) {
-      await _downloadStream(
-        audio,
-        audioPath,
-        (p) => onProgress?.call(0.5 + p * 0.35),
-      );
+      await _downloadStream(audio, audioPath, agg, cancelToken, onProgress);
+      agg.finishStream();
     }
-    onProgress?.call(0.88);
+    onProgress?.call(agg.snapshot(fallback: 0.9));
 
     final command = hasAudio
         ? '-y -i "$videoPath" -i "$audioPath" -c copy -map 0:v:0 -map 1:a:0 "$outputPath"'
@@ -126,7 +130,10 @@ class MediaDownloader {
     if (saveCover) {
       coverSaved = await _saveCover(coverUrl, dirPath, stamp);
     }
-    onProgress?.call(1.0);
+    final int outLen = await File(outputPath).length();
+    onProgress?.call(
+      DownloadProgress(fraction: 1, receivedBytes: outLen, totalBytes: outLen),
+    );
     await _cleanupQuietly(<String>[videoPath, audioPath, outputPath]);
     return Ok(coverSaved ? '已保存视频与封面（ClipKeep）' : '已保存到相册（ClipKeep）');
   }
@@ -134,17 +141,18 @@ class MediaDownloader {
   Future<Result<String>> _downloadAudioOnly(
     MediaPart part,
     String dirPath,
-    String stamp, {
-    String? coverUrl,
-    required bool saveCover,
-    void Function(double progress)? onProgress,
-  }) async {
+    String stamp,
+    _ByteAggregator agg,
+    CancelToken? cancelToken,
+    void Function(DownloadProgress progress)? onProgress,
+  ) async {
     final audio = part.pickAudio();
     if (audio == null || audio.primaryUrl.isEmpty) {
       return const Err(AppError('没有可下载的音频流'));
     }
     final tempPath = '$dirPath/clipkeep_a_$stamp.m4s';
-    await _downloadStream(audio, tempPath, (p) => onProgress?.call(p * 0.85));
+    await _downloadStream(audio, tempPath, agg, cancelToken, onProgress);
+    agg.finishStream();
 
     final String displayName = 'ClipKeep_audio_$stamp.m4a';
     String? savedPath;
@@ -157,18 +165,20 @@ class MediaDownloader {
       savedPath = null;
     }
 
-    bool coverSaved = false;
-    if (saveCover) {
-      coverSaved = await _saveCover(coverUrl, dirPath, stamp);
-    }
-    onProgress?.call(1.0);
+    final int audioLen = await File(tempPath).length();
+    onProgress?.call(
+      DownloadProgress(
+        fraction: 1,
+        receivedBytes: audioLen,
+        totalBytes: audioLen,
+      ),
+    );
 
     if (savedPath != null) {
       await _cleanupQuietly(<String>[tempPath]);
-      return Ok('已保存音频到 下载/ClipKeep：$displayName${coverSaved ? '（含封面）' : ''}');
+      return Ok('已保存音频到 下载/ClipKeep：$displayName');
     }
 
-    // 通道不可用时回退到 App 私有目录。
     final outDir = Directory('$dirPath/ClipKeep');
     if (!await outDir.exists()) {
       await outDir.create(recursive: true);
@@ -180,15 +190,17 @@ class MediaDownloader {
       await File(tempPath).copy(fallbackPath);
       await _cleanupQuietly(<String>[tempPath]);
     }
-    return Ok('已保存音频：$fallbackPath${coverSaved ? '（含封面）' : ''}');
+    return Ok('已保存音频：$fallbackPath');
   }
 
   Future<Result<String>> _downloadCoverOnly(
     String? coverUrl,
     String dirPath,
-    String stamp, {
-    void Function(double progress)? onProgress,
-  }) async {
+    String stamp,
+    _ByteAggregator agg,
+    CancelToken? cancelToken,
+    void Function(DownloadProgress progress)? onProgress,
+  ) async {
     final String? url = _normalizeUrl(coverUrl);
     if (url == null) {
       return const Err(AppError('没有可保存的封面'));
@@ -201,18 +213,26 @@ class MediaDownloader {
       await _dio.download(
         url,
         coverPath,
+        cancelToken: cancelToken,
         options: Options(
           headers: _imageHeaders,
           receiveTimeout: const Duration(minutes: 5),
         ),
-        onReceiveProgress: (received, total) {
-          if (total > 0) {
-            onProgress?.call(received / total);
-          }
+        onReceiveProgress: (int received, int total) {
+          agg.update(received, total);
+          onProgress?.call(agg.snapshot());
         },
       );
+      agg.finishStream();
       await Gal.putImage(coverPath, album: AppConstants.albumName);
-      onProgress?.call(1.0);
+      final int coverLen = await File(coverPath).length();
+      onProgress?.call(
+        DownloadProgress(
+          fraction: 1,
+          receivedBytes: coverLen,
+          totalBytes: coverLen,
+        ),
+      );
       await _cleanupQuietly(<String>[coverPath]);
       return Ok('封面已保存到相册（ClipKeep）');
     } on GalException {
@@ -222,11 +242,7 @@ class MediaDownloader {
     }
   }
 
-  Future<bool> _saveCover(
-    String? coverUrl,
-    String dirPath,
-    String stamp,
-  ) async {
+  Future<bool> _saveCover(String? coverUrl, String dirPath, String stamp) async {
     final String? url = _normalizeUrl(coverUrl);
     if (url == null) {
       return false;
@@ -295,21 +311,64 @@ class MediaDownloader {
   Future<void> _downloadStream(
     MediaStream stream,
     String destination,
-    void Function(double progress) onProgress,
+    _ByteAggregator agg,
+    CancelToken? cancelToken,
+    void Function(DownloadProgress progress)? onProgress,
   ) async {
     await _dio.download(
       stream.primaryUrl,
       destination,
+      cancelToken: cancelToken,
       options: Options(
         headers: stream.headers,
         followRedirects: true,
         receiveTimeout: const Duration(minutes: 30),
       ),
-      onReceiveProgress: (received, total) {
-        if (total > 0) {
-          onProgress(received / total);
-        }
+      onReceiveProgress: (int received, int total) {
+        agg.update(received, total);
+        onProgress?.call(agg.snapshot());
       },
+    );
+  }
+}
+
+/// 汇总多个流（视频+音频）的字节进度。
+class _ByteAggregator {
+  int _finished = 0;
+  int _curReceived = 0;
+  int _curTotal = 0;
+  final DateTime _start = DateTime.now();
+
+  void update(int received, int total) {
+    _curReceived = received;
+    if (total > 0) {
+      _curTotal = total;
+    }
+  }
+
+  void finishStream() {
+    _finished += _curTotal > 0 ? _curTotal : _curReceived;
+    _curReceived = 0;
+    _curTotal = 0;
+  }
+
+  DownloadProgress snapshot({double? fallback}) {
+    final int received = _finished + _curReceived;
+    final int total = _finished + _curTotal;
+    final double elapsed =
+        DateTime.now().difference(_start).inMilliseconds / 1000.0;
+    final double speed = elapsed > 0 ? received / elapsed : 0;
+    double fraction;
+    if (total > 0) {
+      fraction = received / total;
+    } else {
+      fraction = fallback ?? 0;
+    }
+    return DownloadProgress(
+      fraction: fraction.clamp(0.0, 1.0),
+      receivedBytes: received,
+      totalBytes: total,
+      speedBytesPerSec: speed,
     );
   }
 }

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -8,7 +9,9 @@ import 'package:material_ui/material_ui.dart'
 import 'package:provider/provider.dart';
 
 import '../../stores/downloader_store.dart';
+import '../../stores/main_tab_controller.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/format.dart';
 import '../result_page.dart';
 
 /// 首页：按 Figma 设计稿实现。
@@ -20,6 +23,12 @@ class HomeView extends StatefulWidget {
 }
 
 class _HomeViewState extends State<HomeView> {
+  static const Map<String, String> _imageHeaders = <String, String>{
+    'referer': 'https://www.bilibili.com/',
+    'user-agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
+        '(KHTML, like Gecko) Chrome/124 Mobile Safari/537.36',
+  };
+
   final TextEditingController _input = TextEditingController();
   int _mode = 0; // 0 自动识别 / 1 抖音 / 2 哔哩哔哩
 
@@ -78,7 +87,7 @@ class _HomeViewState extends State<HomeView> {
             const SizedBox(height: AppTheme.gap),
             _buildLoginCard(theme, scheme),
             const SizedBox(height: AppTheme.gap),
-            _buildRecent(theme, scheme),
+            _buildRecent(theme, scheme, controller),
           ],
         ),
       ),
@@ -175,24 +184,11 @@ class _HomeViewState extends State<HomeView> {
                     ),
                   ),
                 ),
-                Tooltip(
-                  message: '粘贴',
-                  child: GestureDetector(
-                    onTap: _paste,
-                    child: Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: scheme.primary,
-                        borderRadius: BorderRadius.circular(22),
-                      ),
-                      child: Icon(
-                        Icons.content_paste,
-                        size: 22,
-                        color: scheme.onPrimary,
-                      ),
-                    ),
-                  ),
+                M3EIconButton(
+                  icon: const Icon(Icons.content_paste),
+                  variant: M3EIconButtonVariant.filled,
+                  tooltip: '粘贴',
+                  onPressed: _paste,
                 ),
               ],
             ),
@@ -299,7 +295,12 @@ class _HomeViewState extends State<HomeView> {
     );
   }
 
-  Widget _buildRecent(ThemeData theme, ColorScheme scheme) {
+  Widget _buildRecent(
+    ThemeData theme,
+    ColorScheme scheme,
+    DownloaderStore store,
+  ) {
+    final tasks = store.completedTasks.take(3).toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -315,41 +316,119 @@ class _HomeViewState extends State<HomeView> {
                   ),
                 ),
               ),
-              Tooltip(
-                message: '查看全部下载',
-                child: TextButton(
-                  onPressed: () {},
-                  child: Text(
-                    '全部',
-                    style: theme.textTheme.labelLarge?.copyWith(
-                      color: scheme.primary,
-                    ),
-                  ),
-                ),
+              M3EButton.text(
+                onPressed: () => context.read<MainTabController>().select(1),
+                size: M3EButtonSize.sm,
+                tooltip: '查看全部下载',
+                child: const Text('全部'),
               ),
             ],
           ),
         ),
         const SizedBox(height: 8),
-        _recentItem(
-          theme,
-          scheme,
-          thumbColor: scheme.primaryContainer,
-          iconColor: scheme.onPrimaryContainer,
-          title: '夏日傍晚的海边日落｜延时摄影',
-          meta: '抖音 · 1080P · 24.3 MB',
-        ),
-        const SizedBox(height: 8),
-        _recentItem(
-          theme,
-          scheme,
-          thumbColor: scheme.tertiaryContainer,
-          iconColor: scheme.onTertiaryContainer,
-          title: '【4K】东京夜景漫步 · 雨后的涩谷',
-          meta: '哔哩哔哩 · 720P · 61.8 MB',
-        ),
+        if (tasks.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(left: 8),
+            child: Text(
+              '还没有下载记录',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          )
+        else
+          for (int i = 0; i < tasks.length; i++) ...<Widget>[
+            if (i > 0) const SizedBox(height: 8),
+            _recentItem(
+              theme,
+              scheme,
+              thumbColor: i.isEven
+                  ? scheme.primaryContainer
+                  : scheme.tertiaryContainer,
+              iconColor: i.isEven
+                  ? scheme.onPrimaryContainer
+                  : scheme.onTertiaryContainer,
+              title: tasks[i].title,
+              meta: '${tasks[i].platform} · ${tasks[i].qualityLabel} · ${formatBytes(tasks[i].totalBytes > 0 ? tasks[i].totalBytes : tasks[i].receivedBytes)}',
+              coverUrl: tasks[i].coverUrl,
+              thumbnailPath: tasks[i].thumbnailPath,
+            ),
+          ],
       ],
     );
+  }
+
+  Widget _recentThumb(
+    ColorScheme scheme,
+    String? thumbnailPath,
+    String? coverUrl,
+    Color thumbColor,
+    Color iconColor,
+  ) {
+    final Widget fallback = Container(
+      width: 60,
+      height: 60,
+      decoration: BoxDecoration(
+        color: thumbColor,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Icon(Icons.play_arrow, color: iconColor, size: 26),
+    );
+    final String? url = _normalizeUrl(coverUrl);
+    final Widget network = url == null
+        ? fallback
+        : Image.network(
+            url,
+            width: 60,
+            height: 60,
+            fit: BoxFit.cover,
+            headers: _imageHeaders,
+            loadingBuilder: (BuildContext context, Widget child,
+                ImageChunkEvent? progress) {
+              if (progress == null) {
+                return child;
+              }
+              return fallback;
+            },
+            errorBuilder:
+                (BuildContext context, Object error, StackTrace? stackTrace) =>
+                    fallback,
+          );
+    if (thumbnailPath != null && thumbnailPath.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Image.file(
+          File(thumbnailPath),
+          width: 60,
+          height: 60,
+          fit: BoxFit.cover,
+          errorBuilder:
+              (BuildContext context, Object error, StackTrace? stackTrace) =>
+                  network,
+        ),
+      );
+    }
+    return network;
+  }
+
+  String? _normalizeUrl(String? raw) {
+    if (raw == null) {
+      return null;
+    }
+    final String v = raw.trim();
+    if (v.isEmpty) {
+      return null;
+    }
+    if (v.startsWith('//')) {
+      return 'https:$v';
+    }
+    if (v.startsWith('http://')) {
+      return 'https://${v.substring(7)}';
+    }
+    if (v.startsWith('https://')) {
+      return v;
+    }
+    return 'https://$v';
   }
 
   Widget _recentItem(
@@ -359,6 +438,8 @@ class _HomeViewState extends State<HomeView> {
     required Color iconColor,
     required String title,
     required String meta,
+    String? coverUrl,
+    String? thumbnailPath,
   }) {
     return Container(
       padding: const EdgeInsets.only(left: 8, right: 12, top: 8, bottom: 8),
@@ -368,15 +449,7 @@ class _HomeViewState extends State<HomeView> {
       ),
       child: Row(
         children: <Widget>[
-          Container(
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              color: thumbColor,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Icon(Icons.play_arrow, color: iconColor, size: 26),
-          ),
+          _recentThumb(scheme, thumbnailPath, coverUrl, thumbColor, iconColor),
           const SizedBox(width: 14),
           Expanded(
             child: Column(

@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../components/common/clipboard_link_sheet.dart';
 import '../stores/downloader_store.dart';
+import '../stores/main_tab_controller.dart';
 import 'downloads/downloads_view.dart';
 import 'home/home_view.dart';
 import 'result_page.dart';
@@ -26,7 +27,6 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
     r'(bilibili\.com|b23\.tv|bili2233\.cn|BV[0-9A-Za-z]{10}|douyin\.com|iesdouyin\.com)',
   );
 
-  int _index = 0;
   String? _lastClipboard;
   bool _sheetShowing = false;
   bool _prefsLoaded = false;
@@ -158,14 +158,15 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    final MainTabController tab = context.watch<MainTabController>();
     return Scaffold(
       body: IndexedStack(
-        index: _index,
+        index: tab.index,
         children: const <Widget>[HomeView(), DownloadsView(), SettingsView()],
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: (int value) => setState(() => _index = value),
+        selectedIndex: tab.index,
+        onDestinationSelected: tab.select,
         destinations: const <NavigationDestination>[
           NavigationDestination(
             icon: Icon(Icons.home_outlined),

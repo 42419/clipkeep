@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../api/downloader_api.dart';
 import '../pages/main_page.dart';
 import '../stores/downloader_store.dart';
+import '../stores/main_tab_controller.dart';
 import '../theme/app_theme.dart';
 
 /// 应用根 Widget：注入 Provider + M3E 主题 + 命名路由。
@@ -14,6 +15,9 @@ Widget getRootWidget() {
     providers: [
       ChangeNotifierProvider<DownloaderStore>(
         create: (_) => DownloaderStore(DownloaderApi()),
+      ),
+      ChangeNotifierProvider<MainTabController>(
+        create: (_) => MainTabController(),
       ),
     ],
     child: M3EMaterialApp(
