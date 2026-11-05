@@ -62,8 +62,7 @@ class AuthStore extends ChangeNotifier {
   String? get face => _face;
   int? get mid => _mid;
   bool get vip => _vip;
-  bool get isLoggedIn =>
-      _cookie != null && _cookie!.contains('SESSDATA=');
+  bool get isLoggedIn => _cookie != null && _cookie!.contains('SESSDATA=');
 
   Future<void> load() async {
     try {

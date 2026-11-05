@@ -197,9 +197,7 @@ class _BilibiliLoginPageState extends State<BilibiliLoginPage> {
       setState(() => _saving = false);
       final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
       messenger.clearSnackBars();
-      messenger.showSnackBar(
-        const SnackBar(content: Text('登录校验失败，请重试或重新登录')),
-      );
+      messenger.showSnackBar(const SnackBar(content: Text('登录校验失败，请重试或重新登录')));
       _poll?.cancel();
       _poll = Timer.periodic(const Duration(seconds: 1), (_) {
         unawaited(_checkCookies());
@@ -221,77 +219,77 @@ class _BilibiliLoginPageState extends State<BilibiliLoginPage> {
         unawaited(_web.goBack().then((_) => _syncNavigation()));
       },
       child: Scaffold(
-      backgroundColor: scheme.surface,
-      resizeToAvoidBottomInset: false,
-      appBar: M3EAppBar.top(
-        leading: M3EIconButton(
-          icon: const Icon(Icons.close),
-          variant: M3EIconButtonVariant.standard,
-          tooltip: '关闭',
-          onPressed: () => Navigator.of(context).pop(false),
-        ),
-        titleText: '登录哔哩哔哩',
-        actions: <Widget>[
-          M3EIconButton(
-            icon: const Icon(Icons.arrow_back),
+        backgroundColor: scheme.surface,
+        resizeToAvoidBottomInset: false,
+        appBar: M3EAppBar.top(
+          leading: M3EIconButton(
+            icon: const Icon(Icons.close),
             variant: M3EIconButtonVariant.standard,
-            tooltip: '后退',
-            onPressed: _canGoBack ? () => _web.goBack() : null,
+            tooltip: '关闭',
+            onPressed: () => Navigator.of(context).pop(false),
           ),
-          M3EIconButton(
-            icon: const Icon(Icons.arrow_forward),
-            variant: M3EIconButtonVariant.standard,
-            tooltip: '前进',
-            onPressed: _canGoForward ? () => _web.goForward() : null,
-          ),
-          M3EIconButton(
-            icon: const Icon(Icons.refresh),
-            variant: M3EIconButtonVariant.standard,
-            tooltip: '刷新',
-            onPressed: () => _web.reload(),
-          ),
-        ],
-      ),
-      body: SafeArea(
-        top: false,
-        child: Column(
-          children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: Container(
-                height: 40,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHigh,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  children: <Widget>[
-                    Icon(
-                      Icons.lock_outline,
-                      size: 16,
-                      color: scheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _currentUrl,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+          titleText: '登录哔哩哔哩',
+          actions: <Widget>[
+            M3EIconButton(
+              icon: const Icon(Icons.arrow_back),
+              variant: M3EIconButtonVariant.standard,
+              tooltip: '后退',
+              onPressed: _canGoBack ? () => _web.goBack() : null,
             ),
-            Expanded(child: WebViewWidget(controller: _web)),
-            _buildBottomCard(theme, scheme),
+            M3EIconButton(
+              icon: const Icon(Icons.arrow_forward),
+              variant: M3EIconButtonVariant.standard,
+              tooltip: '前进',
+              onPressed: _canGoForward ? () => _web.goForward() : null,
+            ),
+            M3EIconButton(
+              icon: const Icon(Icons.refresh),
+              variant: M3EIconButtonVariant.standard,
+              tooltip: '刷新',
+              onPressed: () => _web.reload(),
+            ),
           ],
         ),
-      ),
+        body: SafeArea(
+          top: false,
+          child: Column(
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: Container(
+                  height: 40,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      Icon(
+                        Icons.lock_outline,
+                        size: 16,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _currentUrl,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Expanded(child: WebViewWidget(controller: _web)),
+              _buildBottomCard(theme, scheme),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -358,9 +356,7 @@ class _BilibiliLoginPageState extends State<BilibiliLoginPage> {
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              _detected
-                  ? '已检测到登录状态（SESSDATA），可保存'
-                  : '正在检测登录状态（SESSDATA）…',
+              _detected ? '已检测到登录状态（SESSDATA），可保存' : '正在检测登录状态（SESSDATA）…',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: scheme.onSurfaceVariant,
               ),

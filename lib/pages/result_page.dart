@@ -707,9 +707,11 @@ class _ResultPageState extends State<ResultPage> {
 
   Widget _buildBottomBar(ThemeData theme, ColorScheme scheme, MediaPart? part) {
     final store = context.watch<DownloaderStore>();
-    final DownloadTask? task =
-        _activeTaskId == null ? null : store.taskById(_activeTaskId!);
-    final bool active = task != null &&
+    final DownloadTask? task = _activeTaskId == null
+        ? null
+        : store.taskById(_activeTaskId!);
+    final bool active =
+        task != null &&
         (task.status == DownloadStatus.downloading ||
             task.status == DownloadStatus.paused);
     final double progress = task?.progress ?? 0;
@@ -779,10 +781,10 @@ class _ResultPageState extends State<ResultPage> {
     final String qLabel = _audioOnly
         ? '仅音频'
         : _coverOnly
-            ? '仅封面'
-            : _videoWithCover
-                ? '$qualityText + 封面'
-                : qualityText;
+        ? '仅封面'
+        : _videoWithCover
+        ? '$qualityText + 封面'
+        : qualityText;
     final DownloadTask task = store.startDownload(
       part,
       title: store.source?.title ?? part.title,
@@ -795,9 +797,7 @@ class _ResultPageState extends State<ResultPage> {
     );
     setState(() => _activeTaskId = task.id);
     messenger.clearSnackBars();
-    messenger.showSnackBar(
-      const SnackBar(content: Text('已开始下载，可在「下载」页查看进度')),
-    );
+    messenger.showSnackBar(const SnackBar(content: Text('已开始下载，可在「下载」页查看进度')));
   }
 
   void _notify(String message) {
