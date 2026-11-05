@@ -165,6 +165,7 @@ class DownloaderApi {
     bool saveCover = false,
     String? coverUrl,
     String? cookie,
+    String? downloadId,
     CancelToken? cancelToken,
     void Function(DownloadProgress progress)? onProgress,
   }) {
@@ -176,8 +177,30 @@ class DownloaderApi {
       saveCover: saveCover,
       coverUrl: coverUrl,
       cookie: cookie,
+      downloadId: downloadId,
       cancelToken: cancelToken,
       onProgress: onProgress,
     );
+  }
+
+  /// 按分段刷新最新流地址（下载失败重试时用，避免复用过期签名 URL）。
+  Future<Result<List<MediaStream>>> refreshStreams(
+    MediaPart part, {
+    String? cookie,
+  }) async {
+    try {
+      final List<MediaStream> streams = await _resolver.fetchStreamsForPart(
+        part.id,
+        cookie: cookie,
+      );
+      if (streams.isEmpty) {
+        return const Err(AppError('刷新下载地址失败：没有可用流'));
+      }
+      return Ok(streams);
+    } on BiliResolveException catch (e) {
+      return Err(AppError(e.message, cause: e));
+    } catch (e) {
+      return Err(AppError('刷新下载地址失败', cause: e));
+    }
   }
 }

@@ -51,7 +51,7 @@ class DownloadTask {
   final String title;
   final String platform;
   final String qualityLabel;
-  final MediaPart? part;
+  MediaPart? part;
   final int? videoQuality;
   final bool audioOnly;
   final bool coverOnly;
@@ -76,30 +76,29 @@ class DownloadTask {
 
   /// 仅持久化展示字段（已完成历史）。
   Map<String, dynamic> toRecord() => <String, dynamic>{
-        'id': id,
-        'title': title,
-        'platform': platform,
-        'qualityLabel': qualityLabel,
-        'receivedBytes': receivedBytes,
-        'totalBytes': totalBytes,
-        'coverUrl': coverUrl,
-        'thumbnailPath': thumbnailPath,
-        'createdAt': createdAt.toIso8601String(),
-      };
+    'id': id,
+    'title': title,
+    'platform': platform,
+    'qualityLabel': qualityLabel,
+    'receivedBytes': receivedBytes,
+    'totalBytes': totalBytes,
+    'coverUrl': coverUrl,
+    'thumbnailPath': thumbnailPath,
+    'createdAt': createdAt.toIso8601String(),
+  };
 
   factory DownloadTask.fromRecord(Map<String, dynamic> json) => DownloadTask(
-        id: (json['id'] as String?) ?? '',
-        title: (json['title'] as String?) ?? '',
-        platform: (json['platform'] as String?) ?? '',
-        qualityLabel: (json['qualityLabel'] as String?) ?? '',
-        createdAt:
-            DateTime.tryParse(json['createdAt'] as String? ?? '') ??
-                DateTime.now(),
-        status: DownloadStatus.completed,
-        progress: 1,
-        receivedBytes: (json['receivedBytes'] as num?)?.toInt() ?? 0,
-        totalBytes: (json['totalBytes'] as num?)?.toInt() ?? 0,
-        coverUrl: json['coverUrl'] as String?,
-        thumbnailPath: json['thumbnailPath'] as String?,
-      );
+    id: (json['id'] as String?) ?? '',
+    title: (json['title'] as String?) ?? '',
+    platform: (json['platform'] as String?) ?? '',
+    qualityLabel: (json['qualityLabel'] as String?) ?? '',
+    createdAt:
+        DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
+    status: DownloadStatus.completed,
+    progress: 1,
+    receivedBytes: (json['receivedBytes'] as num?)?.toInt() ?? 0,
+    totalBytes: (json['totalBytes'] as num?)?.toInt() ?? 0,
+    coverUrl: json['coverUrl'] as String?,
+    thumbnailPath: json['thumbnailPath'] as String?,
+  );
 }
