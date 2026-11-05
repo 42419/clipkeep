@@ -21,7 +21,9 @@ class MediaDownloader {
 
   final Dio _dio;
 
-  static const MethodChannel _mediaStore = MethodChannel('clipkeep/media_store');
+  static const MethodChannel _mediaStore = MethodChannel(
+    'clipkeep/media_store',
+  );
 
   String? _cookie;
 
@@ -33,9 +35,20 @@ class MediaDownloader {
     return <String, String>{...base, 'cookie': cookie};
   }
 
+  /// 把异常转成简短可读文案，便于在下载失败卡片上定位问题。
+  String _describe(Object e) {
+    if (e is DioException) {
+      final int? code = e.response?.statusCode;
+      return 'HTTP ${code ?? '-'} ${e.type.name}';
+    }
+    final String s = e.toString();
+    return s.length > 160 ? '${s.substring(0, 160)}…' : s;
+  }
+
   static const Map<String, String> _imageHeaders = <String, String>{
     'referer': 'https://www.bilibili.com/',
-    'user-agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
+    'user-agent':
+        'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
         '(KHTML, like Gecko) Chrome/124 Mobile Safari/537.36',
   };
 
@@ -91,7 +104,7 @@ class MediaDownloader {
     } on GalException catch (e) {
       return Err(AppError('保存到相册失败', cause: e));
     } catch (e) {
-      return Err(AppError('下载失败', cause: e));
+      return Err(AppError('下载失败：${_describe(e)}', cause: e));
     }
   }
 
@@ -120,14 +133,7 @@ class MediaDownloader {
     agg.scale = 0.9;
 
     await Future.wait(<Future<void>>[
-      _downloadStream(
-        video,
-        videoPath,
-        agg,
-        'video',
-        cancelToken,
-        onProgress,
-      ),
+      _downloadStream(video, videoPath, agg, 'video', cancelToken, onProgress),
       if (hasAudio)
         _downloadStream(
           audio,
@@ -157,31 +163,37 @@ class MediaDownloader {
         : '-y -i "$videoPath" -c copy "$outputPath"';
     final Completer<ReturnCode?> merge = Completer<ReturnCode?>();
     final int totalMs = ((part.durationSeconds ?? 0) * 1000).round();
-    final FFmpegSession session = await FFmpegKit.executeAsync(
-      command,
-      (FFmpegSession session) async {
-        final ReturnCode? code = await session.getReturnCode();
-        if (!merge.isCompleted) {
-          merge.complete(code);
-        }
-      },
-      null,
-      (Statistics stats) {
-        if (totalMs <= 0 || merge.isCompleted) {
-          return;
-        }
-        final double ratio = (stats.getTime() / totalMs).clamp(0.0, 1.0);
-        final DownloadProgress base = agg.snapshot();
-        onProgress?.call(
-          DownloadProgress(
-            fraction: 0.9 + 0.1 * ratio,
-            receivedBytes: base.receivedBytes,
-            totalBytes: base.totalBytes,
-            phase: '正在合并音视频…',
-          ),
-        );
-      },
-    );
+    final FFmpegSession session;
+    try {
+      session = await FFmpegKit.executeAsync(
+        command,
+        (FFmpegSession session) async {
+          final ReturnCode? code = await session.getReturnCode();
+          if (!merge.isCompleted) {
+            merge.complete(code);
+          }
+        },
+        null,
+        (Statistics stats) {
+          if (totalMs <= 0 || merge.isCompleted) {
+            return;
+          }
+          final double ratio = (stats.getTime() / totalMs).clamp(0.0, 1.0);
+          final DownloadProgress base = agg.snapshot();
+          onProgress?.call(
+            DownloadProgress(
+              fraction: 0.9 + 0.1 * ratio,
+              receivedBytes: base.receivedBytes,
+              totalBytes: base.totalBytes,
+              phase: '正在合并音视频…',
+            ),
+          );
+        },
+      );
+    } catch (e) {
+      await _cleanupQuietly(<String>[videoPath, audioPath, outputPath]);
+      return Err(AppError('调用 FFmpeg 失败：${_describe(e)}', cause: e));
+    }
     final ReturnCode? returnCode = await merge.future;
     if (!ReturnCode.isSuccess(returnCode)) {
       final String? logs = await session.getOutput();
@@ -318,7 +330,11 @@ class MediaDownloader {
     }
   }
 
-  Future<bool> _saveCover(String? coverUrl, String dirPath, String stamp) async {
+  Future<bool> _saveCover(
+    String? coverUrl,
+    String dirPath,
+    String stamp,
+  ) async {
     final String? url = _normalizeUrl(coverUrl);
     if (url == null) {
       return false;
@@ -448,11 +464,11 @@ class MediaDownloader {
                   },
                 )
                 .then((_) async {
-              final int len = await File(partPath).length();
-              if (len != expected) {
-                ok = false;
-              }
-            }),
+                  final int len = await File(partPath).length();
+                  if (len != expected) {
+                    ok = false;
+                  }
+                }),
           );
         }
         await Future.wait(futures);
@@ -528,7 +544,10 @@ class MediaDownloader {
       final int? length = int.tryParse(
         res.headers.value('content-length') ?? '',
       );
-      return (supported: false, total: (length != null && length > 0) ? length : null);
+      return (
+        supported: false,
+        total: (length != null && length > 0) ? length : null,
+      );
     } catch (_) {
       return (supported: false, total: null);
     }
