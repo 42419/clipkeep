@@ -31,8 +31,9 @@ class DownloaderApi {
 
   Future<Result<ParsedSource>> parse(String input) async {
     final dir = await getApplicationSupportDirectory();
+    final String normalized = await _normalizeInput(input);
     final response = await _bdl.parse(
-      input: input,
+      input: normalized,
       stateDir: dir.path,
       withStreams: true,
     );
@@ -47,6 +48,55 @@ class DownloaderApi {
       return Ok(await _toParsedSource(data));
     } catch (e) {
       return Err(AppError('解析结果格式异常', cause: e));
+    }
+  }
+
+  static final RegExp _urlPattern = RegExp(r'https?://[^\s]+');
+  static final RegExp _bvPattern = RegExp(r'BV[0-9A-Za-z]{10}');
+  static final RegExp _trailingPunctuation =
+      RegExp(r'[),.;!?，。；！？、）】》」』]+$');
+
+  /// 把用户输入归一化为 bdl 可识别形式：完整链接、含标题的分享文本、b23 短链都可。
+  /// 视频链接优先提取 BV 号直接交给 bdl；其它类型保留（解析后的）完整链接。
+  Future<String> _normalizeInput(String raw) async {
+    final String text = raw.trim();
+    final RegExpMatch? match = _urlPattern.firstMatch(text);
+    if (match == null) {
+      final RegExpMatch? bv = _bvPattern.firstMatch(text);
+      return bv?.group(0) ?? text;
+    }
+    String url = match.group(0)!.replaceAll(_trailingPunctuation, '');
+    final bool isShort =
+        url.contains('b23.tv') || url.contains('bili2233.cn');
+    if (isShort) {
+      final String? resolved = await _resolveShortLink(url);
+      if (resolved != null) {
+        url = resolved;
+      }
+    }
+    final RegExpMatch? bv = _bvPattern.firstMatch(url);
+    if (bv != null) {
+      return bv.group(0)!;
+    }
+    return url;
+  }
+
+  /// 跟随 b23.tv 重定向取最终地址；失败返回 null（回退原短链，bdl 仍会尝试展开）。
+  Future<String?> _resolveShortLink(String shortUrl) async {
+    try {
+      final Response<dynamic> response = await _http.get<dynamic>(
+        shortUrl,
+        options: Options(
+          followRedirects: true,
+          maxRedirects: 6,
+          receiveTimeout: const Duration(seconds: 20),
+          validateStatus: (int? status) => status != null && status < 500,
+        ),
+      );
+      final String finalUrl = response.realUri.toString();
+      return finalUrl.isEmpty ? null : finalUrl;
+    } catch (_) {
+      return null;
     }
   }
 
