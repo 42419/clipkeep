@@ -49,9 +49,12 @@ class BilibiliResolver {
             ),
           );
 
+  // 网页 API 用桌面 Chrome UA：B 站 upos CDN 会校验 UA，移动端 UA 对签名媒体地址会返回 403。
   static const String _userAgent =
-      'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
-      '(KHTML, like Gecko) Chrome/124 Mobile Safari/537.36';
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+      '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+  // 媒体下载专用 UA：对齐 PiliPlus 的 DownloadHttp.userAgent，CDN 接受度更好。
+  static const String _downloadUserAgent = 'Bilibili Freedoooooom/MarkII';
 
   static const String _navUrl = 'https://api.bilibili.com/x/web-interface/nav';
   static const String _viewUrl =
@@ -306,7 +309,7 @@ class BilibiliResolver {
       urls: urls,
       headers: const <String, String>{
         'referer': 'https://www.bilibili.com/',
-        'user-agent': _userAgent,
+        'user-agent': _downloadUserAgent,
       },
       bandwidth: ((item['bandwidth'] ?? item['bandWidth']) as num?)?.toInt(),
     );
