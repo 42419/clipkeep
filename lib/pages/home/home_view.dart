@@ -27,7 +27,8 @@ class HomeView extends StatefulWidget {
 class _HomeViewState extends State<HomeView> {
   static const Map<String, String> _imageHeaders = <String, String>{
     'referer': 'https://www.bilibili.com/',
-    'user-agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
+    'user-agent':
+        'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
         '(KHTML, like Gecko) Chrome/124 Mobile Safari/537.36',
   };
 
@@ -250,8 +251,9 @@ class _HomeViewState extends State<HomeView> {
   Widget _buildLoginCard(ThemeData theme, ColorScheme scheme) {
     final AuthStore auth = context.watch<AuthStore>();
     if (auth.isLoggedIn) {
-      final String uname =
-          (auth.uname != null && auth.uname!.isNotEmpty) ? auth.uname! : '已登录';
+      final String uname = (auth.uname != null && auth.uname!.isNotEmpty)
+          ? auth.uname!
+          : '已登录';
       final String face = auth.face ?? '';
       return Container(
         padding: const EdgeInsets.all(16),
@@ -369,11 +371,7 @@ class _HomeViewState extends State<HomeView> {
         shape: BoxShape.circle,
       ),
       child: Center(
-        child: FaIcon(
-          FontAwesomeIcons.bilibili,
-          color: Colors.white,
-          size: 20,
-        ),
+        child: FaIcon(FontAwesomeIcons.bilibili, color: Colors.white, size: 20),
       ),
     );
   }
@@ -390,9 +388,7 @@ class _HomeViewState extends State<HomeView> {
     if (ok == true) {
       final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
       messenger.clearSnackBars();
-      messenger.showSnackBar(
-        const SnackBar(content: Text('登录成功，已解锁高清画质')),
-      );
+      messenger.showSnackBar(const SnackBar(content: Text('登录成功，已解锁高清画质')));
     }
   }
 
@@ -477,7 +473,8 @@ class _HomeViewState extends State<HomeView> {
                   ? scheme.onPrimaryContainer
                   : scheme.onTertiaryContainer,
               title: tasks[i].title,
-              meta: '${tasks[i].platform} · ${tasks[i].qualityLabel} · ${formatBytes(tasks[i].totalBytes > 0 ? tasks[i].totalBytes : tasks[i].receivedBytes)}',
+              meta:
+                  '${tasks[i].platform} · ${tasks[i].qualityLabel} · ${formatBytes(tasks[i].totalBytes > 0 ? tasks[i].totalBytes : tasks[i].receivedBytes)}',
               coverUrl: tasks[i].coverUrl,
               thumbnailPath: tasks[i].thumbnailPath,
             ),
@@ -511,16 +508,22 @@ class _HomeViewState extends State<HomeView> {
             height: 60,
             fit: BoxFit.cover,
             headers: _imageHeaders,
-            loadingBuilder: (BuildContext context, Widget child,
-                ImageChunkEvent? progress) {
-              if (progress == null) {
-                return child;
-              }
-              return fallback;
-            },
-            errorBuilder:
-                (BuildContext context, Object error, StackTrace? stackTrace) =>
-                    fallback,
+            loadingBuilder:
+                (
+                  BuildContext context,
+                  Widget child,
+                  ImageChunkEvent? progress,
+                ) {
+                  if (progress == null) {
+                    return child;
+                  }
+                  return fallback;
+                },
+            errorBuilder: (
+              BuildContext context,
+              Object error,
+              StackTrace? stackTrace,
+            ) => fallback,
           );
     if (thumbnailPath != null && thumbnailPath.isNotEmpty) {
       return ClipRRect(
@@ -530,9 +533,11 @@ class _HomeViewState extends State<HomeView> {
           width: 60,
           height: 60,
           fit: BoxFit.cover,
-          errorBuilder:
-              (BuildContext context, Object error, StackTrace? stackTrace) =>
-                  network,
+          errorBuilder: (
+            BuildContext context,
+            Object error,
+            StackTrace? stackTrace,
+          ) => network,
         ),
       );
     }

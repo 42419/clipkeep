@@ -1,6 +1,7 @@
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:material_3_expressive/material_3_expressive.dart';
-import 'package:material_ui/material_ui.dart' hide CornerRounding, RoundedPolygon;
+import 'package:material_ui/material_ui.dart'
+    hide CornerRounding, RoundedPolygon;
 
 /// 剪贴板检测底部弹窗（按 Figma「7 剪贴板检测 Clipboard sheet」）。
 Future<void> showClipboardLinkSheet(
@@ -74,8 +75,9 @@ class _ClipboardSheetState extends State<_ClipboardSheet> {
           const SizedBox(height: 18),
           Text(
             '发现一条新链接',
-            style: theme.textTheme.headlineSmall
-                ?.copyWith(fontWeight: FontWeight.w700),
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
           ),
           const SizedBox(height: 16),
           Container(
@@ -102,16 +104,18 @@ class _ClipboardSheetState extends State<_ClipboardSheet> {
                     children: <Widget>[
                       Text(
                         platform.title,
-                        style: theme.textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w700),
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         widget.link,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall
-                            ?.copyWith(color: scheme.onSurfaceVariant),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
                       ),
                     ],
                   ),
@@ -128,14 +132,16 @@ class _ClipboardSheetState extends State<_ClipboardSheet> {
                   children: <Widget>[
                     Text(
                       '自动检测剪贴板',
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w700),
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       '回到应用时自动识别分享链接',
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: scheme.onSurfaceVariant),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
                     ),
                   ],
                 ),
@@ -193,8 +199,7 @@ class _PlatformInfo {
 
   static _PlatformInfo of(String link, ColorScheme scheme) {
     final String lower = link.toLowerCase();
-    final bool douyin =
-        lower.contains('douyin') || lower.contains('iesdouyin');
+    final bool douyin = lower.contains('douyin') || lower.contains('iesdouyin');
     if (douyin) {
       return const _PlatformInfo(
         '抖音视频',
@@ -202,7 +207,8 @@ class _PlatformInfo {
         Color(0xFF161823),
       );
     }
-    final bool bili = lower.contains('bilibili') ||
+    final bool bili =
+        lower.contains('bilibili') ||
         lower.contains('b23.tv') ||
         lower.contains('bili2233') ||
         RegExp(r'BV[0-9A-Za-z]{10}').hasMatch(link);

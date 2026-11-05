@@ -1,7 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
-import 'package:material_ui/material_ui.dart' hide CornerRounding, RoundedPolygon;
+import 'package:material_ui/material_ui.dart'
+    hide CornerRounding, RoundedPolygon;
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 

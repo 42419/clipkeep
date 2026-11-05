@@ -1,7 +1,8 @@
 import 'dart:io';
 
 import 'package:material_3_expressive/material_3_expressive.dart';
-import 'package:material_ui/material_ui.dart' hide CornerRounding, RoundedPolygon;
+import 'package:material_ui/material_ui.dart'
+    hide CornerRounding, RoundedPolygon;
 import 'package:provider/provider.dart';
 
 import '../../stores/downloader_store.dart';
@@ -20,7 +21,8 @@ class DownloadsView extends StatefulWidget {
 class _DownloadsViewState extends State<DownloadsView> {
   static const Map<String, String> _imageHeaders = <String, String>{
     'referer': 'https://www.bilibili.com/',
-    'user-agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
+    'user-agent':
+        'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
         '(KHTML, like Gecko) Chrome/124 Mobile Safari/537.36',
   };
 
@@ -69,8 +71,9 @@ class _DownloadsViewState extends State<DownloadsView> {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
     final DownloaderStore store = context.watch<DownloaderStore>();
-    final List<DownloadTask> tasks =
-        _tab == 0 ? store.activeTasks : store.completedTasks;
+    final List<DownloadTask> tasks = _tab == 0
+        ? store.activeTasks
+        : store.completedTasks;
     return Scaffold(
       backgroundColor: scheme.surface,
       body: SafeArea(
@@ -273,9 +276,8 @@ class _DownloadsViewState extends State<DownloadsView> {
                 icon: Icon(paused ? Icons.play_arrow : Icons.pause),
                 variant: M3EIconButtonVariant.tonal,
                 tooltip: paused ? '继续' : '暂停',
-                onPressed: () => paused
-                    ? store.resumeTask(task)
-                    : store.pauseTask(task),
+                onPressed: () =>
+                    paused ? store.resumeTask(task) : store.pauseTask(task),
               ),
             ],
           ),
@@ -366,8 +368,9 @@ class _DownloadsViewState extends State<DownloadsView> {
               const SizedBox(width: 8),
               M3EButton.filled(
                 onPressed: () {
-                  final ScaffoldMessengerState messenger =
-                      ScaffoldMessenger.of(context);
+                  final ScaffoldMessengerState messenger = ScaffoldMessenger.of(
+                    context,
+                  );
                   messenger.clearSnackBars();
                   messenger.showSnackBar(
                     const SnackBar(content: Text('登录功能开发中')),
@@ -447,11 +450,7 @@ class _DownloadsViewState extends State<DownloadsView> {
         color: scheme.primaryContainer,
         borderRadius: BorderRadius.circular(18),
       ),
-      child: Icon(
-        Icons.play_arrow,
-        color: scheme.onPrimaryContainer,
-        size: 26,
-      ),
+      child: Icon(Icons.play_arrow, color: scheme.onPrimaryContainer, size: 26),
     );
     final String? url = _normalizeUrl(task.coverUrl);
     final Widget network = url == null
@@ -462,22 +461,22 @@ class _DownloadsViewState extends State<DownloadsView> {
             height: 56,
             fit: BoxFit.cover,
             headers: _imageHeaders,
-            loadingBuilder: (
-              BuildContext context,
-              Widget child,
-              ImageChunkEvent? progress,
-            ) {
-              if (progress == null) {
-                return child;
-              }
-              return fallback;
-            },
+            loadingBuilder:
+                (
+                  BuildContext context,
+                  Widget child,
+                  ImageChunkEvent? progress,
+                ) {
+                  if (progress == null) {
+                    return child;
+                  }
+                  return fallback;
+                },
             errorBuilder: (
               BuildContext context,
               Object error,
               StackTrace? stackTrace,
-            ) =>
-                fallback,
+            ) => fallback,
           );
     final String? local = task.thumbnailPath;
     final Widget image = (local != null && local.isNotEmpty)
@@ -490,14 +489,10 @@ class _DownloadsViewState extends State<DownloadsView> {
               BuildContext context,
               Object error,
               StackTrace? stackTrace,
-            ) =>
-                network,
+            ) => network,
           )
         : network;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(18),
-      child: image,
-    );
+    return ClipRRect(borderRadius: BorderRadius.circular(18), child: image);
   }
 
   String? _normalizeUrl(String? raw) {
@@ -527,7 +522,9 @@ class _DownloadsViewState extends State<DownloadsView> {
     }
     final List<String> parts = <String>[];
     if (task.totalBytes > 0) {
-      parts.add('${formatBytes(task.receivedBytes)} / ${formatBytes(task.totalBytes)}');
+      parts.add(
+        '${formatBytes(task.receivedBytes)} / ${formatBytes(task.totalBytes)}',
+      );
     } else {
       parts.add(formatBytes(task.receivedBytes));
     }
