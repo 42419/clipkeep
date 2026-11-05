@@ -145,6 +145,7 @@ class DownloaderStore extends ChangeNotifier {
       saveCover: task.saveCover,
       coverUrl: task.coverUrl,
       cookie: cookieProvider?.call(),
+      downloadId: task.id,
       cancelToken: token,
       onProgress: (DownloadProgress p) {
         task.progress = p.fraction;
@@ -191,7 +192,25 @@ class DownloaderStore extends ChangeNotifier {
     unawaited(_runTask(task));
   }
 
-  void retryTask(DownloadTask task) => resumeTask(task);
+  /// 重试失败任务：先用最新地址刷新流（解决签名 URL 过期 403），再继续下载。
+  Future<void> retryTask(DownloadTask task) async {
+    final MediaPart? part = task.part;
+    if (part != null) {
+      final Result<List<MediaStream>> refreshed = await _api.refreshStreams(
+        part,
+        cookie: cookieProvider?.call(),
+      );
+      if (refreshed is Ok<List<MediaStream>> && refreshed.value.isNotEmpty) {
+        task.part = MediaPart(
+          id: part.id,
+          title: part.title,
+          durationSeconds: part.durationSeconds,
+          streams: refreshed.value,
+        );
+      }
+    }
+    resumeTask(task);
+  }
 
   void removeTask(DownloadTask task) {
     _tokens[task.id]?.cancel('removed');
@@ -203,8 +222,9 @@ class DownloaderStore extends ChangeNotifier {
   }
 
   void clearCompleted() {
-    final List<DownloadTask> completed =
-        _tasks.where((DownloadTask t) => t.isCompleted).toList();
+    final List<DownloadTask> completed = _tasks
+        .where((DownloadTask t) => t.isCompleted)
+        .toList();
     for (final DownloadTask task in completed) {
       unawaited(_deleteThumbQuietly(task.thumbnailPath));
     }
@@ -236,8 +256,9 @@ class DownloaderStore extends ChangeNotifier {
       }
       final List<dynamic> list = jsonDecode(raw) as List<dynamic>;
       for (final dynamic item in list) {
-        final DownloadTask task =
-            DownloadTask.fromRecord((item as Map).cast<String, dynamic>());
+        final DownloadTask task = DownloadTask.fromRecord(
+          (item as Map).cast<String, dynamic>(),
+        );
         if (!_tasks.any((DownloadTask t) => t.id == task.id)) {
           _tasks.add(task);
         }

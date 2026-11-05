@@ -60,6 +60,7 @@ class MediaDownloader {
     bool saveCover = false,
     String? coverUrl,
     String? cookie,
+    String? downloadId,
     CancelToken? cancelToken,
     void Function(DownloadProgress progress)? onProgress,
   }) async {
@@ -68,7 +69,9 @@ class MediaDownloader {
       final dir =
           await getExternalStorageDirectory() ??
           await getApplicationDocumentsDirectory();
-      final stamp = DateTime.now().millisecondsSinceEpoch.toString();
+      // downloadId 稳定（= task.id），使暂停/重试能命中同一批临时文件，实现断点续传。
+      final stamp =
+          downloadId ?? DateTime.now().millisecondsSinceEpoch.toString();
       final agg = _ByteAggregator();
       if (coverOnly) {
         return await _downloadCoverOnly(
@@ -191,18 +194,18 @@ class MediaDownloader {
         },
       );
     } catch (e) {
-      await _cleanupQuietly(<String>[videoPath, audioPath, outputPath]);
+      await _cleanupQuietly(<String>[outputPath]);
       return Err(AppError('调用 FFmpeg 失败：${_describe(e)}', cause: e));
     }
     final ReturnCode? returnCode = await merge.future;
     if (!ReturnCode.isSuccess(returnCode)) {
       final String? logs = await session.getOutput();
-      await _cleanupQuietly(<String>[videoPath, audioPath, outputPath]);
+      await _cleanupQuietly(<String>[outputPath]);
       return Err(AppError('音视频合并失败', cause: logs));
     }
 
     if (!await _ensureGalleryAccess()) {
-      await _cleanupQuietly(<String>[videoPath, audioPath, outputPath]);
+      await _cleanupQuietly(<String>[outputPath]);
       return const Err(AppError('没有相册写入权限'));
     }
     await Gal.putVideo(outputPath, album: AppConstants.albumName);
@@ -400,8 +403,49 @@ class MediaDownloader {
     }
   }
 
-  /// 多连接分片下载（Range）以突破 B 站单连接限速；不支持/失败则回退单连接。
+  /// 依次尝试主地址与备用地址；分片/单连接均支持断点续传。
   Future<void> _downloadStream(
+    MediaStream stream,
+    String destination,
+    _ByteAggregator agg,
+    String key,
+    CancelToken? cancelToken,
+    void Function(DownloadProgress progress)? onProgress,
+  ) async {
+    final List<String> candidates = <String>[
+      if (stream.primaryUrl.isNotEmpty) stream.primaryUrl,
+      ...stream.urls.where(
+        (String u) => u.isNotEmpty && u != stream.primaryUrl,
+      ),
+    ];
+    if (candidates.isEmpty) {
+      throw Exception('没有可用的下载地址');
+    }
+    Object? lastError;
+    for (final String url in candidates) {
+      try {
+        await _downloadStreamFrom(
+          url,
+          stream,
+          destination,
+          agg,
+          key,
+          cancelToken,
+          onProgress,
+        );
+        return;
+      } catch (e) {
+        if (cancelToken?.isCancelled ?? false) {
+          rethrow;
+        }
+        lastError = e;
+      }
+    }
+    throw lastError ?? Exception('全部下载地址均失败');
+  }
+
+  Future<void> _downloadStreamFrom(
+    String url,
     MediaStream stream,
     String destination,
     _ByteAggregator agg,
@@ -411,125 +455,234 @@ class MediaDownloader {
   ) async {
     const int threshold = 4 * 1024 * 1024;
     final ({bool supported, int? total}) probe = await _probeRange(
-      stream,
+      url,
+      stream.headers,
       cancelToken,
     );
     final int? total = probe.total;
-    if (probe.supported && total != null && total > threshold) {
-      final int parts = total > 80 * 1024 * 1024
-          ? 6
-          : (total > 20 * 1024 * 1024 ? 4 : 2);
-      final int chunk = (total / parts).ceil();
-      final List<int> lastReceived = List<int>.filled(parts, 0);
-      final List<String> partPaths = <String>[];
-      final List<int> expectedLens = <int>[];
-      bool ok = true;
+
+    // 已完成（例如另一个流失败后重试）直接跳过，避免重复下载。
+    final int destExisting = await _existingLength(destination);
+    if (total != null && destExisting >= total) {
       agg.beginStream(key, total);
-      try {
-        final List<Future<void>> futures = <Future<void>>[];
-        for (int i = 0; i < parts; i++) {
-          final int start = i * chunk;
-          if (start > total - 1) {
-            break;
-          }
-          final int end = (i == parts - 1) ? total - 1 : (start + chunk - 1);
-          final String partPath = '$destination.part$i';
-          final int expected = end - start + 1;
-          partPaths.add(partPath);
-          expectedLens.add(expected);
-          futures.add(
-            _dio
-                .download(
-                  stream.primaryUrl,
-                  partPath,
-                  cancelToken: cancelToken,
-                  options: Options(
-                    headers: <String, String>{
-                      ..._withCookie(stream.headers),
-                      'Range': 'bytes=$start-$end',
-                    },
-                    followRedirects: true,
-                    receiveTimeout: const Duration(minutes: 30),
-                    validateStatus: (int? status) =>
-                        status == 206 || status == 200,
-                  ),
-                  onReceiveProgress: (int received, int partTotal) {
-                    lastReceived[i] = received;
-                    int sum = 0;
-                    for (final int value in lastReceived) {
-                      sum += value;
-                    }
-                    agg.updateStream(key, sum, total);
-                    onProgress?.call(agg.snapshot());
-                  },
-                )
-                .then((_) async {
-                  final int len = await File(partPath).length();
-                  if (len != expected) {
-                    ok = false;
-                  }
-                }),
-          );
-        }
-        await Future.wait(futures);
-      } catch (_) {
-        ok = false;
-      }
-      if (ok) {
-        try {
-          final IOSink sink = File(destination).openWrite();
-          for (final String partPath in partPaths) {
-            await sink.addStream(File(partPath).openRead());
-          }
-          await sink.close();
-        } catch (_) {
-          ok = false;
-        }
-      }
-      for (final String partPath in partPaths) {
-        try {
-          await File(partPath).delete();
-        } catch (_) {
-          // ignore
-        }
-      }
-      if (ok) {
-        return;
-      }
-      // 分片失败：回退单连接，重置当前流进度。
-      agg.beginStream(key, 0);
-    } else {
-      agg.beginStream(key, total ?? 0);
+      agg.updateStream(key, total, total);
+      onProgress?.call(agg.snapshot());
+      return;
     }
 
-    await _dio.download(
-      stream.primaryUrl,
+    if (probe.supported && total != null && total > threshold) {
+      try {
+        await _downloadMultiPart(
+          url,
+          stream,
+          destination,
+          total,
+          agg,
+          key,
+          cancelToken,
+          onProgress,
+        );
+        return;
+      } catch (e) {
+        if (cancelToken?.isCancelled ?? false) {
+          rethrow;
+        }
+        // 分片失败：清掉分片后回退单连接（同一地址）。
+        await _cleanupQuietly(<String>[
+          for (int i = 0; i < 64; i++) '$destination.part$i',
+        ]);
+      }
+    }
+
+    final int existing = await _existingLength(destination);
+    agg.beginStream(key, total ?? 0);
+    if (existing > 0) {
+      agg.updateStream(key, existing, total ?? 0);
+      onProgress?.call(agg.snapshot());
+    }
+    final int? to = probe.supported ? (total != null ? total - 1 : null) : null;
+    await _downloadRangeAppend(
+      url,
+      stream.headers,
       destination,
-      cancelToken: cancelToken,
-      options: Options(
-        headers: _withCookie(stream.headers),
-        followRedirects: true,
-        receiveTimeout: const Duration(minutes: 30),
-      ),
-      onReceiveProgress: (int received, int total) {
-        agg.updateStream(key, received, total);
+      existing,
+      to,
+      cancelToken,
+      (int received) {
+        agg.updateStream(key, received, total ?? 0);
         onProgress?.call(agg.snapshot());
       },
     );
   }
 
-  Future<({bool supported, int? total})> _probeRange(
+  Future<void> _downloadMultiPart(
+    String url,
     MediaStream stream,
+    String destination,
+    int total,
+    _ByteAggregator agg,
+    String key,
+    CancelToken? cancelToken,
+    void Function(DownloadProgress progress)? onProgress,
+  ) async {
+    final int parts = total > 80 * 1024 * 1024
+        ? 6
+        : (total > 20 * 1024 * 1024 ? 4 : 2);
+    final int chunk = (total / parts).ceil();
+    final List<String> partPaths = <String>[];
+    final List<int> expectedLens = <int>[];
+    final List<int> startOffsets = <int>[];
+    final List<int> haveLens = <int>[];
+    for (int i = 0; i < parts; i++) {
+      final int start = i * chunk;
+      if (start > total - 1) {
+        break;
+      }
+      final int end = (i == parts - 1) ? total - 1 : (start + chunk - 1);
+      final String partPath = '$destination.part$i';
+      final int expected = end - start + 1;
+      int have = await _existingLength(partPath);
+      if (have > expected) {
+        await _cleanupQuietly(<String>[partPath]);
+        have = 0;
+      }
+      partPaths.add(partPath);
+      expectedLens.add(expected);
+      startOffsets.add(start);
+      haveLens.add(have);
+    }
+    int known = 0;
+    for (final int h in haveLens) {
+      known += h;
+    }
+    agg.beginStream(key, total);
+    agg.updateStream(key, known, total);
+    onProgress?.call(agg.snapshot());
+
+    final List<int> receivedPerPart = List<int>.from(haveLens);
+    final List<Future<void>> futures = <Future<void>>[];
+    for (int i = 0; i < partPaths.length; i++) {
+      final int expected = expectedLens[i];
+      final int have = haveLens[i];
+      if (have >= expected) {
+        continue;
+      }
+      final int from = startOffsets[i] + have;
+      final int to = startOffsets[i] + expected - 1;
+      futures.add(
+        _downloadRangeAppend(
+          url,
+          stream.headers,
+          partPaths[i],
+          have,
+          to,
+          cancelToken,
+          (int received) {
+            receivedPerPart[i] = received;
+            int sum = 0;
+            for (final int v in receivedPerPart) {
+              sum += v;
+            }
+            agg.updateStream(key, sum, total);
+            onProgress?.call(agg.snapshot());
+          },
+          rangeFrom: from,
+        ),
+      );
+    }
+    await Future.wait(futures);
+
+    for (int i = 0; i < partPaths.length; i++) {
+      final int len = await _existingLength(partPaths[i]);
+      if (len != expectedLens[i]) {
+        throw Exception('分片下载不完整');
+      }
+    }
+    final IOSink sink = File(destination).openWrite();
+    for (final String partPath in partPaths) {
+      await sink.addStream(File(partPath).openRead());
+    }
+    await sink.close();
+    await _cleanupQuietly(partPaths);
+    agg.updateStream(key, total, total);
+    onProgress?.call(agg.snapshot());
+  }
+
+  Future<int> _existingLength(String path) async {
+    try {
+      final File f = File(path);
+      if (await f.exists()) {
+        return await f.length();
+      }
+    } catch (_) {
+      // ignore
+    }
+    return 0;
+  }
+
+  /// 从 existing（该文件已下载字节）继续下载到 to；服务端忽略 Range 时整段重下。
+  Future<void> _downloadRangeAppend(
+    String url,
+    Map<String, String> headers,
+    String path,
+    int existing,
+    int? to,
+    CancelToken? cancelToken,
+    void Function(int received) onProgress, {
+    int? rangeFrom,
+  }) async {
+    final int from = rangeFrom ?? existing;
+    final Map<String, String> requestHeaders = <String, String>{
+      ..._withCookie(headers),
+      if (to != null)
+        'Range': 'bytes=$from-$to'
+      else if (from > 0)
+        'Range': 'bytes=$from-',
+    };
+    final Response<ResponseBody> res = await _dio.get<ResponseBody>(
+      url,
+      cancelToken: cancelToken,
+      options: Options(
+        responseType: ResponseType.stream,
+        headers: requestHeaders,
+        followRedirects: true,
+        receiveTimeout: const Duration(minutes: 30),
+        validateStatus: (int? s) => s != null && (s == 200 || s == 206),
+      ),
+    );
+    final bool honorsRange = res.statusCode == 206;
+    if (rangeFrom != null && !honorsRange) {
+      throw Exception('服务端不支持分段');
+    }
+    final bool append = existing > 0 && honorsRange;
+    final IOSink sink = File(path)
+        .openWrite(mode: append ? FileMode.append : FileMode.write);
+    int received = append ? existing : 0;
+    try {
+      await for (final List<int> chunk in res.data!.stream) {
+        sink.add(chunk);
+        received += chunk.length;
+        onProgress(received);
+      }
+      await sink.flush();
+    } finally {
+      await sink.close();
+    }
+  }
+
+  Future<({bool supported, int? total})> _probeRange(
+    String url,
+    Map<String, String> headers,
     CancelToken? cancelToken,
   ) async {
     try {
       final Response<List<int>> res = await _dio.get<List<int>>(
-        stream.primaryUrl,
+        url,
         cancelToken: cancelToken,
         options: Options(
           responseType: ResponseType.bytes,
           headers: <String, String>{
-            ..._withCookie(stream.headers),
+            ..._withCookie(headers),
             'Range': 'bytes=0-1',
           },
           validateStatus: (int? status) => status != null && status < 500,

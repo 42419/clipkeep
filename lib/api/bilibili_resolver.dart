@@ -184,6 +184,34 @@ class BilibiliResolver {
     ];
   }
 
+  /// 按分段 id（形如 "BVxxx-12345" 或 "170001-12345"）重新获取最新流地址，
+  /// 用于下载失败/重试时刷新过期的签名 URL。
+  Future<List<MediaStream>> fetchStreamsForPart(
+    String partId, {
+    String? cookie,
+  }) async {
+    final int idx = partId.lastIndexOf('-');
+    if (idx <= 0) {
+      throw const BiliResolveException('无法识别的分段地址');
+    }
+    final String head = partId.substring(0, idx);
+    final int? cid = int.tryParse(partId.substring(idx + 1));
+    if (cid == null) {
+      throw const BiliResolveException('无法识别的分段地址');
+    }
+    String? bvid;
+    int? aid;
+    if (head.startsWith('BV')) {
+      bvid = head;
+    } else {
+      aid = int.tryParse(head);
+    }
+    if (bvid == null && aid == null) {
+      throw const BiliResolveException('无法识别的分段地址');
+    }
+    return _fetchStreams(bvid: bvid, aid: aid, cid: cid, cookie: cookie);
+  }
+
   Future<List<MediaStream>> _fetchStreams({
     String? bvid,
     int? aid,
@@ -207,8 +235,9 @@ class BilibiliResolver {
         'dm_img_str': _randomBase64(16, 64),
         'dm_cover_img_str': _randomBase64(32, 128),
         'dm_img_inter': '{"ds":[],"wh":[0,0,0],"of":[0,0,0]}',
-        // 未登录时争取拿到更高画质。
-        if (cookie == null || cookie.isEmpty) 'try_look': 1,
+        // 不再使用 try_look：那是「未登录试看高清」通道，返回的 720P/1080P 是试看流，
+        // 整段下载会被 CDN 403；且会让未登录也显示 480P 以上画质。
+        // 未登录只取服务端正常允许的画质，需要高清请登录（带 cookie）。
       },
       cookie: cookie,
       needWbi: true,
