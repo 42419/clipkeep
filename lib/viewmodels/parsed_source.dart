@@ -38,8 +38,7 @@ class MediaPart {
     if (videos.isEmpty) {
       return null;
     }
-    final preferred =
-        videos.where((s) => s.codec == preferredCodec).toList();
+    final preferred = videos.where((s) => s.codec == preferredCodec).toList();
     final pool = preferred.isNotEmpty ? preferred : videos;
     pool.sort((a, b) => b.quality.compareTo(a.quality));
     return pool.first;

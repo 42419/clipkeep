@@ -1,5 +1,6 @@
 import 'package:material_3_expressive/material_3_expressive.dart';
-import 'package:material_ui/material_ui.dart' hide CornerRounding, RoundedPolygon;
+import 'package:material_ui/material_ui.dart'
+    hide CornerRounding, RoundedPolygon;
 
 /// 应用主题：颜色种子、圆角/间距等设计令牌集中在这里。
 class AppTheme {

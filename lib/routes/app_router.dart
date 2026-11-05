@@ -1,5 +1,6 @@
 import 'package:material_3_expressive/material_3_expressive.dart';
-import 'package:material_ui/material_ui.dart' hide CornerRounding, RoundedPolygon;
+import 'package:material_ui/material_ui.dart'
+    hide CornerRounding, RoundedPolygon;
 import 'package:provider/provider.dart';
 
 import '../api/downloader_api.dart';

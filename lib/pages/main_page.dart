@@ -1,4 +1,5 @@
-import 'package:material_ui/material_ui.dart' hide CornerRounding, RoundedPolygon;
+import 'package:material_ui/material_ui.dart'
+    hide CornerRounding, RoundedPolygon;
 
 import 'downloads/downloads_view.dart';
 import 'home/home_view.dart';

@@ -50,7 +50,9 @@ class _HomeViewState extends State<HomeView> {
     final store = context.read<DownloaderStore>();
     unawaited(store.parse(text));
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (BuildContext context) => const ResultPage()),
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => const ResultPage(),
+      ),
     );
   }
 
@@ -255,23 +257,6 @@ class _HomeViewState extends State<HomeView> {
       ),
       child: Row(
         children: <Widget>[
-          // Container(
-          //   width: 52,
-          //   height: 52,
-          //   alignment: Alignment.center,
-          //   decoration: const BoxDecoration(
-          //     color: Color(0xFFF2A0A8),
-          //     shape: BoxShape.circle,
-          //   ),
-          //   child: const Text(
-          //     'B',
-          //     style: TextStyle(
-          //       color: Colors.white,
-          //       fontSize: 22,
-          //       fontWeight: FontWeight.w600,
-          //     ),
-          //   ),
-          // ),
           M3EShapeContainer(
             kind: M3EShapeKind.cookie9Sided,
             height: 52,

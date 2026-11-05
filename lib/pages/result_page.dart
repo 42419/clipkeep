@@ -1,5 +1,6 @@
 import 'package:material_3_expressive/material_3_expressive.dart';
-import 'package:material_ui/material_ui.dart' hide CornerRounding, RoundedPolygon;
+import 'package:material_ui/material_ui.dart'
+    hide CornerRounding, RoundedPolygon;
 import 'package:provider/provider.dart';
 
 import '../stores/downloader_store.dart';
@@ -17,7 +18,8 @@ class ResultPage extends StatefulWidget {
 class _ResultPageState extends State<ResultPage> {
   static const Map<String, String> _imageHeaders = <String, String>{
     'referer': 'https://www.bilibili.com/',
-    'user-agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
+    'user-agent':
+        'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
         '(KHTML, like Gecko) Chrome/124 Mobile Safari/537.36',
   };
 
@@ -32,9 +34,11 @@ class _ResultPageState extends State<ResultPage> {
     final scheme = theme.colorScheme;
     final store = context.watch<DownloaderStore>();
     final source = store.source;
-    final bool loading = store.parsing || (source == null && store.error == null);
-    final MediaPart? part =
-        (source != null && source.parts.isNotEmpty) ? source.parts.first : null;
+    final bool loading =
+        store.parsing || (source == null && store.error == null);
+    final MediaPart? part = (source != null && source.parts.isNotEmpty)
+        ? source.parts.first
+        : null;
 
     return Scaffold(
       backgroundColor: scheme.surface,
@@ -60,7 +64,10 @@ class _ResultPageState extends State<ResultPage> {
                   return FadeTransition(
                     opacity: curved,
                     child: ScaleTransition(
-                      scale: Tween<double>(begin: 0.98, end: 1.0).animate(curved),
+                      scale: Tween<double>(
+                        begin: 0.98,
+                        end: 1.0,
+                      ).animate(curved),
                       child: child,
                     ),
                   );
@@ -81,14 +88,14 @@ class _ResultPageState extends State<ResultPage> {
                         child: _buildSkeleton(theme, scheme),
                       )
                     : (source == null
-                        ? KeyedSubtree(
-                            key: const ValueKey<String>('error'),
-                            child: _buildError(theme, scheme, store),
-                          )
-                        : KeyedSubtree(
-                            key: const ValueKey<String>('content'),
-                            child: _buildContent(theme, scheme, source, part),
-                          )),
+                          ? KeyedSubtree(
+                              key: const ValueKey<String>('error'),
+                              child: _buildError(theme, scheme, store),
+                            )
+                          : KeyedSubtree(
+                              key: const ValueKey<String>('content'),
+                              child: _buildContent(theme, scheme, source, part),
+                            )),
               ),
             ),
             if (!loading && source != null)
@@ -156,7 +163,11 @@ class _ResultPageState extends State<ResultPage> {
   }
 
   // ---------- 错误态 ----------
-  Widget _buildError(ThemeData theme, ColorScheme scheme, DownloaderStore store) {
+  Widget _buildError(
+    ThemeData theme,
+    ColorScheme scheme,
+    DownloaderStore store,
+  ) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -168,8 +179,9 @@ class _ResultPageState extends State<ResultPage> {
             Text(
               store.error ?? '解析失败',
               textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: scheme.onSurfaceVariant),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: 20),
             M3EButton.filled(
@@ -187,7 +199,11 @@ class _ResultPageState extends State<ResultPage> {
 
   // ---------- 内容 ----------
   Widget _buildContent(
-      ThemeData theme, ColorScheme scheme, ParsedSource source, MediaPart? part) {
+    ThemeData theme,
+    ColorScheme scheme,
+    ParsedSource source,
+    MediaPart? part,
+  ) {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       children: <Widget>[
@@ -195,8 +211,9 @@ class _ResultPageState extends State<ResultPage> {
         const SizedBox(height: 16),
         Text(
           source.title,
-          style: theme.textTheme.headlineSmall
-              ?.copyWith(fontWeight: FontWeight.w700),
+          style: theme.textTheme.headlineSmall?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
         ),
         const SizedBox(height: 16),
         _buildAuthor(theme, scheme, source),
@@ -224,16 +241,22 @@ class _ResultPageState extends State<ResultPage> {
             fit: BoxFit.cover,
             width: double.infinity,
             height: 208,
-            loadingBuilder: (BuildContext context, Widget child,
-                ImageChunkEvent? progress) {
-              if (progress == null) {
-                return child;
-              }
-              return _ShimmerBox(height: 208, radius: AppTheme.radiusXl);
-            },
-            errorBuilder: (BuildContext context, Object error,
-                    StackTrace? stackTrace) =>
-                _decorativeCover(scheme),
+            loadingBuilder:
+                (
+                  BuildContext context,
+                  Widget child,
+                  ImageChunkEvent? progress,
+                ) {
+                  if (progress == null) {
+                    return child;
+                  }
+                  return _ShimmerBox(height: 208, radius: AppTheme.radiusXl);
+                },
+            errorBuilder: (
+              BuildContext context,
+              Object error,
+              StackTrace? stackTrace,
+            ) => _decorativeCover(scheme),
           );
     return ClipRRect(
       borderRadius: BorderRadius.circular(AppTheme.radiusXl),
@@ -257,7 +280,10 @@ class _ResultPageState extends State<ResultPage> {
               left: 14,
               top: 14,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: scheme.surface,
                   borderRadius: BorderRadius.circular(12),
@@ -289,7 +315,10 @@ class _ResultPageState extends State<ResultPage> {
               right: 14,
               bottom: 14,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: scheme.inverseSurface,
                   borderRadius: BorderRadius.circular(10),
@@ -364,7 +393,11 @@ class _ResultPageState extends State<ResultPage> {
     return 'https://$v';
   }
 
-  Widget _buildAuthor(ThemeData theme, ColorScheme scheme, ParsedSource source) {
+  Widget _buildAuthor(
+    ThemeData theme,
+    ColorScheme scheme,
+    ParsedSource source,
+  ) {
     final author = source.author.isEmpty ? '未知作者' : source.author;
     final name = author.startsWith('@') ? author : '@$author';
     final date = source.publishDate ?? '';
@@ -379,14 +412,16 @@ class _ResultPageState extends State<ResultPage> {
             children: <Widget>[
               Text(
                 name,
-                style: theme.textTheme.titleSmall
-                    ?.copyWith(fontWeight: FontWeight.w700),
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
               ),
               const SizedBox(height: 2),
               Text(
                 meta,
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: scheme.onSurfaceVariant),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),
@@ -415,22 +450,25 @@ class _ResultPageState extends State<ResultPage> {
         height: 44,
         fit: BoxFit.cover,
         headers: _imageHeaders,
-        loadingBuilder: (BuildContext context, Widget child,
-            ImageChunkEvent? progress) {
-          if (progress == null) {
-            return child;
-          }
-          return const _ShimmerBox(height: 44, radius: 22, width: 44);
-        },
+        loadingBuilder:
+            (BuildContext context, Widget child, ImageChunkEvent? progress) {
+              if (progress == null) {
+                return child;
+              }
+              return const _ShimmerBox(height: 44, radius: 22, width: 44);
+            },
         errorBuilder:
             (BuildContext context, Object error, StackTrace? stackTrace) =>
                 Container(
-          width: 44,
-          height: 44,
-          color: scheme.primaryContainer,
-          child:
-              Icon(Icons.person, size: 22, color: scheme.onPrimaryContainer),
-        ),
+                  width: 44,
+                  height: 44,
+                  color: scheme.primaryContainer,
+                  child: Icon(
+                    Icons.person,
+                    size: 22,
+                    color: scheme.onPrimaryContainer,
+                  ),
+                ),
       ),
     );
   }
@@ -456,8 +494,9 @@ class _ResultPageState extends State<ResultPage> {
       return null;
     }
     final int q = qualities[_qualityIndex.clamp(0, qualities.length - 1)];
-    final matches =
-        part.streams.where((MediaStream s) => s.isVideo && s.quality == q).toList();
+    final matches = part.streams
+        .where((MediaStream s) => s.isVideo && s.quality == q)
+        .toList();
     if (matches.isEmpty) {
       return null;
     }
@@ -469,7 +508,10 @@ class _ResultPageState extends State<ResultPage> {
   String _estimateSize(MediaStream? stream, MediaPart? part) {
     final int? bandwidth = stream?.bandwidth;
     final int? duration = part?.durationSeconds;
-    if (bandwidth == null || bandwidth <= 0 || duration == null || duration <= 0) {
+    if (bandwidth == null ||
+        bandwidth <= 0 ||
+        duration == null ||
+        duration <= 0) {
       return '';
     }
     final double mb = (bandwidth * duration / 8) / (1024 * 1024);
@@ -489,9 +531,12 @@ class _ResultPageState extends State<ResultPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Text('画质',
-            style: theme.textTheme.titleMedium
-                ?.copyWith(fontWeight: FontWeight.w700)),
+        Text(
+          '画质',
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
         const SizedBox(height: 10),
         if (qualities.isEmpty)
           Text('无', style: theme.textTheme.bodyMedium)
@@ -525,8 +570,9 @@ class _ResultPageState extends State<ResultPage> {
         const SizedBox(height: 10),
         Text(
           meta,
-          style: theme.textTheme.bodySmall
-              ?.copyWith(color: scheme.onSurfaceVariant),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: scheme.onSurfaceVariant,
+          ),
         ),
       ],
     );
@@ -536,52 +582,67 @@ class _ResultPageState extends State<ResultPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Text('选项',
-            style: theme.textTheme.titleMedium
-                ?.copyWith(fontWeight: FontWeight.w700)),
+        Text(
+          '选项',
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
         const SizedBox(height: 10),
         Wrap(
           spacing: 8,
           runSpacing: 8,
           children: <Widget>[
-            _optionChip(theme, scheme,
-                label: '无水印',
-                icon: Icons.check,
-                selected: true,
-                onTap: () => _notify('B 站视频本身无水印')),
-            _optionChip(theme, scheme,
-                label: '仅音频',
-                icon: Icons.music_note,
-                selected: _audioOnly,
-                onTap: () => setState(() {
-                  _audioOnly = !_audioOnly;
-                  if (_audioOnly) {
-                    _coverOnly = false;
-                    _videoWithCover = false;
-                  }
-                })),
-            _optionChip(theme, scheme,
-                label: '仅封面',
-                icon: Icons.image_outlined,
-                selected: _coverOnly,
-                onTap: () => setState(() {
-                  _coverOnly = !_coverOnly;
-                  if (_coverOnly) {
-                    _audioOnly = false;
-                    _videoWithCover = false;
-                  }
-                })),
-            _optionChip(theme, scheme,
-                label: '视频+封面',
-                icon: Icons.collections_outlined,
-                selected: _videoWithCover,
-                onTap: () => setState(() {
-                  _videoWithCover = !_videoWithCover;
-                  if (_videoWithCover) {
-                    _audioOnly = false;
-                    _coverOnly = false;
-                  }
-                })),
+            _optionChip(
+              theme,
+              scheme,
+              label: '无水印',
+              icon: Icons.check,
+              selected: true,
+              onTap: () => _notify('B 站视频本身无水印'),
+            ),
+            _optionChip(
+              theme,
+              scheme,
+              label: '仅音频',
+              icon: Icons.music_note,
+              selected: _audioOnly,
+              onTap: () => setState(() {
+                _audioOnly = !_audioOnly;
+                if (_audioOnly) {
+                  _coverOnly = false;
+                  _videoWithCover = false;
+                }
+              }),
+            ),
+            _optionChip(
+              theme,
+              scheme,
+              label: '仅封面',
+              icon: Icons.image_outlined,
+              selected: _coverOnly,
+              onTap: () => setState(() {
+                _coverOnly = !_coverOnly;
+                if (_coverOnly) {
+                  _audioOnly = false;
+                  _videoWithCover = false;
+                }
+              }),
+            ),
+            _optionChip(
+              theme,
+              scheme,
+              label: '视频+封面',
+              icon: Icons.collections_outlined,
+              selected: _videoWithCover,
+              onTap: () => setState(() {
+                _videoWithCover = !_videoWithCover;
+                if (_videoWithCover) {
+                  _audioOnly = false;
+                  _coverOnly = false;
+                }
+              }),
+            ),
           ],
         ),
       ],

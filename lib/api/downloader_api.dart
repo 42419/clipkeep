@@ -9,8 +9,8 @@ import '../viewmodels/parsed_source.dart';
 /// 数据接口层：封装 B 站解析与媒体下载，供 Store 调用。
 class DownloaderApi {
   DownloaderApi({BdlService? bdlService, MediaDownloader? mediaDownloader})
-      : _bdl = bdlService ?? const BdlService(),
-        _media = mediaDownloader ?? MediaDownloader();
+    : _bdl = bdlService ?? const BdlService(),
+      _media = mediaDownloader ?? MediaDownloader();
 
   final BdlService _bdl;
   final MediaDownloader _media;
@@ -22,7 +22,7 @@ class DownloaderApi {
       headers: const <String, String>{
         'user-agent':
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-                '(KHTML, like Gecko) Chrome/124 Safari/537.36',
+            '(KHTML, like Gecko) Chrome/124 Safari/537.36',
         'referer': 'https://www.bilibili.com/',
         'accept': 'application/json, text/plain, */*',
       },
@@ -72,7 +72,8 @@ class DownloaderApi {
 
   Future<ParsedSource> _toParsedSource(Map<String, dynamic> tree) async {
     final source =
-        (tree['source'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
+        (tree['source'] as Map?)?.cast<String, dynamic>() ??
+        <String, dynamic>{};
     final groups = (tree['groups'] as List?) ?? const <dynamic>[];
     final items = <Map<String, dynamic>>[];
     for (final group in groups) {
@@ -91,9 +92,8 @@ class DownloaderApi {
     final int? ownerMid = (first['owner_mid'] as num?)?.toInt();
     final String? avatarUrl = await _fetchAvatar(ownerMid);
     return ParsedSource(
-      title: (first['title'] as String?) ??
-          (source['title'] as String?) ??
-          '未知标题',
+      title:
+          (first['title'] as String?) ?? (source['title'] as String?) ?? '未知标题',
       author: (first['owner_name'] as String?) ?? '',
       coverUrl: first['cover_url'] as String?,
       publishDate: first['publish_date'] as String?,
@@ -146,14 +146,16 @@ class DownloaderApi {
       final urls = ((streamMap['urls'] as List?) ?? const <dynamic>[])
           .map((e) => e.toString())
           .toList();
-      streams.add(MediaStream(
-        kind: (streamMap['kind'] as String?) ?? '',
-        quality: (quality?['value'] as num?)?.toInt() ?? 0,
-        codec: (streamMap['codec'] as String?) ?? '',
-        urls: urls,
-        headers: headers,
-        bandwidth: (streamMap['bandwidth'] as num?)?.toInt(),
-      ));
+      streams.add(
+        MediaStream(
+          kind: (streamMap['kind'] as String?) ?? '',
+          quality: (quality?['value'] as num?)?.toInt() ?? 0,
+          codec: (streamMap['codec'] as String?) ?? '',
+          urls: urls,
+          headers: headers,
+          bandwidth: (streamMap['bandwidth'] as num?)?.toInt(),
+        ),
+      );
     }
     return MediaPart(
       id: (part['id'] as String?) ?? '',

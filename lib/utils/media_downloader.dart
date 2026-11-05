@@ -17,12 +17,14 @@ class MediaDownloader {
 
   final Dio _dio;
 
-  static const MethodChannel _mediaStore =
-      MethodChannel('clipkeep/media_store');
+  static const MethodChannel _mediaStore = MethodChannel(
+    'clipkeep/media_store',
+  );
 
   static const Map<String, String> _imageHeaders = <String, String>{
     'referer': 'https://www.bilibili.com/',
-    'user-agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
+    'user-agent':
+        'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
         '(KHTML, like Gecko) Chrome/124 Mobile Safari/537.36',
   };
 
@@ -36,22 +38,37 @@ class MediaDownloader {
     void Function(double progress)? onProgress,
   }) async {
     try {
-      final dir = await getExternalStorageDirectory() ??
+      final dir =
+          await getExternalStorageDirectory() ??
           await getApplicationDocumentsDirectory();
       final stamp = DateTime.now().millisecondsSinceEpoch.toString();
       if (coverOnly) {
-        return await _downloadCoverOnly(coverUrl, dir.path, stamp,
-            onProgress: onProgress);
+        return await _downloadCoverOnly(
+          coverUrl,
+          dir.path,
+          stamp,
+          onProgress: onProgress,
+        );
       }
       if (audioOnly) {
-        return await _downloadAudioOnly(part, dir.path, stamp,
-            coverUrl: coverUrl, saveCover: saveCover, onProgress: onProgress);
-      }
-      return await _downloadVideo(part, dir.path, stamp,
-          videoQuality: videoQuality,
+        return await _downloadAudioOnly(
+          part,
+          dir.path,
+          stamp,
           coverUrl: coverUrl,
           saveCover: saveCover,
-          onProgress: onProgress);
+          onProgress: onProgress,
+        );
+      }
+      return await _downloadVideo(
+        part,
+        dir.path,
+        stamp,
+        videoQuality: videoQuality,
+        coverUrl: coverUrl,
+        saveCover: saveCover,
+        onProgress: onProgress,
+      );
     } on GalException catch (e) {
       return Err(AppError('保存到相册失败', cause: e));
     } catch (e) {
@@ -81,7 +98,10 @@ class MediaDownloader {
     await _downloadStream(video, videoPath, (p) => onProgress?.call(p * 0.5));
     if (hasAudio) {
       await _downloadStream(
-          audio, audioPath, (p) => onProgress?.call(0.5 + p * 0.35));
+        audio,
+        audioPath,
+        (p) => onProgress?.call(0.5 + p * 0.35),
+      );
     }
     onProgress?.call(0.88);
 
@@ -202,7 +222,11 @@ class MediaDownloader {
     }
   }
 
-  Future<bool> _saveCover(String? coverUrl, String dirPath, String stamp) async {
+  Future<bool> _saveCover(
+    String? coverUrl,
+    String dirPath,
+    String stamp,
+  ) async {
     final String? url = _normalizeUrl(coverUrl);
     if (url == null) {
       return false;

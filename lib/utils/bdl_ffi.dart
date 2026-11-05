@@ -17,8 +17,8 @@ typedef _FreeDart = void Function(ffi.Pointer<Utf8>);
 /// isolate. One instance is bound to the isolate that opened it.
 class BdlFfi {
   BdlFfi._(this._lib)
-      : _parse = _lib.lookupFunction<_ParseNative, _ParseDart>('bdl_parse'),
-        _free = _lib.lookupFunction<_FreeNative, _FreeDart>('bdl_free_string');
+    : _parse = _lib.lookupFunction<_ParseNative, _ParseDart>('bdl_parse'),
+      _free = _lib.lookupFunction<_FreeNative, _FreeDart>('bdl_free_string');
 
   factory BdlFfi.open() => BdlFfi._(_openLibrary());
 
@@ -40,7 +40,10 @@ class BdlFfi {
     try {
       final resultPtr = _parse(requestPtr);
       if (resultPtr == ffi.nullptr) {
-        return const {'ok': false, 'error': 'bdl_parse returned a null pointer'};
+        return const {
+          'ok': false,
+          'error': 'bdl_parse returned a null pointer',
+        };
       }
       try {
         return jsonDecode(resultPtr.toDartString()) as Map<String, dynamic>;
