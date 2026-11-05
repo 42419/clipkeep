@@ -101,11 +101,28 @@ class MediaDownloader {
     final audioPath = '$dirPath/clipkeep_a_$stamp.m4s';
     final outputPath = '$dirPath/clipkeep_$stamp.mp4';
 
-    await _downloadStream(video, videoPath, agg, cancelToken, onProgress);
-    agg.finishStream();
+    await Future.wait(<Future<void>>[
+      _downloadStream(
+        video,
+        videoPath,
+        agg,
+        'video',
+        cancelToken,
+        onProgress,
+      ),
+      if (hasAudio)
+        _downloadStream(
+          audio,
+          audioPath,
+          agg,
+          'audio',
+          cancelToken,
+          onProgress,
+        ),
+    ]);
+    agg.finishStreamKey('video');
     if (hasAudio) {
-      await _downloadStream(audio, audioPath, agg, cancelToken, onProgress);
-      agg.finishStream();
+      agg.finishStreamKey('audio');
     }
     onProgress?.call(agg.snapshot(fallback: 0.9));
 
@@ -151,8 +168,15 @@ class MediaDownloader {
       return const Err(AppError('没有可下载的音频流'));
     }
     final tempPath = '$dirPath/clipkeep_a_$stamp.m4s';
-    await _downloadStream(audio, tempPath, agg, cancelToken, onProgress);
-    agg.finishStream();
+    await _downloadStream(
+      audio,
+      tempPath,
+      agg,
+      'audio',
+      cancelToken,
+      onProgress,
+    );
+    agg.finishStreamKey('audio');
 
     final String displayName = 'ClipKeep_audio_$stamp.m4a';
     String? savedPath;
@@ -219,11 +243,11 @@ class MediaDownloader {
           receiveTimeout: const Duration(minutes: 5),
         ),
         onReceiveProgress: (int received, int total) {
-          agg.update(received, total);
+          agg.updateStream('cover', received, total);
           onProgress?.call(agg.snapshot());
         },
       );
-      agg.finishStream();
+      agg.finishStreamKey('cover');
       await Gal.putImage(coverPath, album: AppConstants.albumName);
       final int coverLen = await File(coverPath).length();
       onProgress?.call(
@@ -308,13 +332,108 @@ class MediaDownloader {
     }
   }
 
+  /// 多连接分片下载（Range）以突破 B 站单连接限速；不支持/失败则回退单连接。
   Future<void> _downloadStream(
     MediaStream stream,
     String destination,
     _ByteAggregator agg,
+    String key,
     CancelToken? cancelToken,
     void Function(DownloadProgress progress)? onProgress,
   ) async {
+    const int threshold = 4 * 1024 * 1024;
+    final ({bool supported, int? total}) probe = await _probeRange(
+      stream,
+      cancelToken,
+    );
+    final int? total = probe.total;
+    if (probe.supported && total != null && total > threshold) {
+      final int parts = total > 80 * 1024 * 1024
+          ? 6
+          : (total > 20 * 1024 * 1024 ? 4 : 2);
+      final int chunk = (total / parts).ceil();
+      final List<int> lastReceived = List<int>.filled(parts, 0);
+      final List<String> partPaths = <String>[];
+      final List<int> expectedLens = <int>[];
+      bool ok = true;
+      agg.beginStream(key, total);
+      try {
+        final List<Future<void>> futures = <Future<void>>[];
+        for (int i = 0; i < parts; i++) {
+          final int start = i * chunk;
+          if (start > total - 1) {
+            break;
+          }
+          final int end = (i == parts - 1) ? total - 1 : (start + chunk - 1);
+          final String partPath = '$destination.part$i';
+          final int expected = end - start + 1;
+          partPaths.add(partPath);
+          expectedLens.add(expected);
+          futures.add(
+            _dio
+                .download(
+                  stream.primaryUrl,
+                  partPath,
+                  cancelToken: cancelToken,
+                  options: Options(
+                    headers: <String, String>{
+                      ...stream.headers,
+                      'Range': 'bytes=$start-$end',
+                    },
+                    followRedirects: true,
+                    receiveTimeout: const Duration(minutes: 30),
+                    validateStatus: (int? status) =>
+                        status == 206 || status == 200,
+                  ),
+                  onReceiveProgress: (int received, int partTotal) {
+                    lastReceived[i] = received;
+                    int sum = 0;
+                    for (final int value in lastReceived) {
+                      sum += value;
+                    }
+                    agg.updateStream(key, sum, total);
+                    onProgress?.call(agg.snapshot());
+                  },
+                )
+                .then((_) async {
+              final int len = await File(partPath).length();
+              if (len != expected) {
+                ok = false;
+              }
+            }),
+          );
+        }
+        await Future.wait(futures);
+      } catch (_) {
+        ok = false;
+      }
+      if (ok) {
+        try {
+          final IOSink sink = File(destination).openWrite();
+          for (final String partPath in partPaths) {
+            await sink.addStream(File(partPath).openRead());
+          }
+          await sink.close();
+        } catch (_) {
+          ok = false;
+        }
+      }
+      for (final String partPath in partPaths) {
+        try {
+          await File(partPath).delete();
+        } catch (_) {
+          // ignore
+        }
+      }
+      if (ok) {
+        return;
+      }
+      // 分片失败：回退单连接，重置当前流进度。
+      agg.beginStream(key, 0);
+    } else {
+      agg.beginStream(key, total ?? 0);
+    }
+
     await _dio.download(
       stream.primaryUrl,
       destination,
@@ -325,36 +444,81 @@ class MediaDownloader {
         receiveTimeout: const Duration(minutes: 30),
       ),
       onReceiveProgress: (int received, int total) {
-        agg.update(received, total);
+        agg.updateStream(key, received, total);
         onProgress?.call(agg.snapshot());
       },
     );
   }
+
+  Future<({bool supported, int? total})> _probeRange(
+    MediaStream stream,
+    CancelToken? cancelToken,
+  ) async {
+    try {
+      final Response<List<int>> res = await _dio.get<List<int>>(
+        stream.primaryUrl,
+        cancelToken: cancelToken,
+        options: Options(
+          responseType: ResponseType.bytes,
+          headers: <String, String>{
+            ...stream.headers,
+            'Range': 'bytes=0-1',
+          },
+          validateStatus: (int? status) => status != null && status < 500,
+          receiveTimeout: const Duration(seconds: 20),
+        ),
+      );
+      final String? contentRange = res.headers.value('content-range');
+      if (res.statusCode == 206 && contentRange != null) {
+        final String totalPart = contentRange.split('/').last;
+        return (supported: true, total: int.tryParse(totalPart));
+      }
+      final int? length = int.tryParse(
+        res.headers.value('content-length') ?? '',
+      );
+      return (supported: false, total: (length != null && length > 0) ? length : null);
+    } catch (_) {
+      return (supported: false, total: null);
+    }
+  }
 }
 
-/// 汇总多个流（视频+音频）的字节进度。
+/// 汇总多个并发流（视频 + 音频）的字节进度。
 class _ByteAggregator {
   int _finished = 0;
-  int _curReceived = 0;
-  int _curTotal = 0;
+  final Map<String, int> _recv = <String, int>{};
+  final Map<String, int> _tot = <String, int>{};
   final DateTime _start = DateTime.now();
 
-  void update(int received, int total) {
-    _curReceived = received;
+  void beginStream(String key, int total) {
+    _recv[key] = 0;
+    _tot[key] = total > 0 ? total : 0;
+  }
+
+  void updateStream(String key, int received, int total) {
+    _recv[key] = received;
     if (total > 0) {
-      _curTotal = total;
+      _tot[key] = total;
     }
   }
 
-  void finishStream() {
-    _finished += _curTotal > 0 ? _curTotal : _curReceived;
-    _curReceived = 0;
-    _curTotal = 0;
+  void finishStreamKey(String key) {
+    final int total = _tot[key] ?? 0;
+    final int received = _recv[key] ?? 0;
+    _finished += total > 0 ? total : received;
+    _recv.remove(key);
+    _tot.remove(key);
   }
 
   DownloadProgress snapshot({double? fallback}) {
-    final int received = _finished + _curReceived;
-    final int total = _finished + _curTotal;
+    int received = _finished;
+    int total = _finished;
+    for (final int value in _recv.values) {
+      received += value;
+    }
+    for (final int value in _tot.values) {
+      total += value;
+    }
     final double elapsed =
         DateTime.now().difference(_start).inMilliseconds / 1000.0;
     final double speed = elapsed > 0 ? received / elapsed : 0;
