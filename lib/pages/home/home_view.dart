@@ -13,6 +13,7 @@ import '../../stores/downloader_store.dart';
 import '../../stores/main_tab_controller.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/format.dart';
+import '../../viewmodels/download_task.dart';
 import '../login/bilibili_login_page.dart';
 import '../result_page.dart';
 
@@ -461,24 +462,36 @@ class _HomeViewState extends State<HomeView> {
             ),
           )
         else
-          for (int i = 0; i < tasks.length; i++) ...<Widget>[
-            if (i > 0) const SizedBox(height: 8),
-            _recentItem(
-              theme,
-              scheme,
-              thumbColor: i.isEven
-                  ? scheme.primaryContainer
-                  : scheme.tertiaryContainer,
-              iconColor: i.isEven
-                  ? scheme.onPrimaryContainer
-                  : scheme.onTertiaryContainer,
-              title: tasks[i].title,
-              meta:
-                  '${tasks[i].platform} · ${tasks[i].qualityLabel} · ${formatBytes(tasks[i].totalBytes > 0 ? tasks[i].totalBytes : tasks[i].receivedBytes)}',
-              coverUrl: tasks[i].coverUrl,
-              thumbnailPath: tasks[i].thumbnailPath,
-            ),
-          ],
+          M3EList(
+            gap: 8,
+            itemCount: tasks.length,
+            itemBuilder: (BuildContext context, int index) {
+              final DownloadTask task = tasks[index];
+              return M3EListItem(
+                leading: M3EListImage(
+                  child: _recentThumb(
+                    scheme,
+                    task.thumbnailPath,
+                    task.coverUrl,
+                    index.isEven
+                        ? scheme.primaryContainer
+                        : scheme.tertiaryContainer,
+                    index.isEven
+                        ? scheme.onPrimaryContainer
+                        : scheme.onTertiaryContainer,
+                  ),
+                ),
+                headline: task.title,
+                supportingText:
+                    '${task.platform} · ${task.qualityLabel} · ${formatBytes(task.totalBytes > 0 ? task.totalBytes : task.receivedBytes)}',
+                trailing: Icon(
+                  Icons.chevron_right,
+                  color: scheme.onSurfaceVariant,
+                ),
+                onTap: () => context.read<MainTabController>().select(1),
+              );
+            },
+          ),
       ],
     );
   }
@@ -562,65 +575,5 @@ class _HomeViewState extends State<HomeView> {
       return v;
     }
     return 'https://$v';
-  }
-
-  Widget _recentItem(
-    ThemeData theme,
-    ColorScheme scheme, {
-    required Color thumbColor,
-    required Color iconColor,
-    required String title,
-    required String meta,
-    String? coverUrl,
-    String? thumbnailPath,
-  }) {
-    return Container(
-      padding: const EdgeInsets.only(left: 8, right: 12, top: 8, bottom: 8),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-      ),
-      child: Row(
-        children: <Widget>[
-          _recentThumb(scheme, thumbnailPath, coverUrl, thumbColor, iconColor),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  meta,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                    fontFeatures: const <FontFeature>[
-                      FontFeature.tabularFigures(),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Tooltip(
-            message: '更多操作',
-            child: Icon(
-              Icons.more_vert,
-              size: 22,
-              color: scheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }

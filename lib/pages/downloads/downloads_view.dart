@@ -118,20 +118,25 @@ class _DownloadsViewState extends State<DownloadsView> {
             Expanded(
               child: tasks.isEmpty
                   ? _buildEmpty(theme, scheme)
-                  : ListView.separated(
+                  : _tab == 0
+                  ? ListView.separated(
                       controller: _scroll,
                       padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
                       itemCount: tasks.length,
                       separatorBuilder: (_, _) => const SizedBox(height: 12),
                       itemBuilder: (BuildContext context, int index) {
                         final DownloadTask task = tasks[index];
-                        if (_tab == 0) {
-                          return task.isFailed
-                              ? _buildErrorCard(theme, scheme, store, task)
-                              : _buildActiveCard(theme, scheme, store, task);
-                        }
-                        return _buildCompletedCard(theme, scheme, store, task);
+                        return task.isFailed
+                            ? _buildErrorCard(theme, scheme, store, task)
+                            : _buildActiveCard(theme, scheme, store, task);
                       },
+                    )
+                  : ListView(
+                      controller: _scroll,
+                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+                      children: <Widget>[
+                        _buildCompletedList(theme, scheme, store, tasks),
+                      ],
                     ),
             ),
           ],
@@ -388,57 +393,41 @@ class _DownloadsViewState extends State<DownloadsView> {
     );
   }
 
-  Widget _buildCompletedCard(
+  Widget _buildCompletedList(
     ThemeData theme,
     ColorScheme scheme,
     DownloaderStore store,
-    DownloadTask task,
+    List<DownloadTask> tasks,
   ) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-      ),
-      child: Row(
-        children: <Widget>[
-          _cover(task, scheme),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  task.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${task.platform} · ${task.qualityLabel} · ${formatBytes(task.totalBytes > 0 ? task.totalBytes : task.receivedBytes)}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                    fontFeatures: const <FontFeature>[
-                      FontFeature.tabularFigures(),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+    return M3EList(
+      gap: 12,
+      itemCount: tasks.length,
+      itemBuilder: (BuildContext context, int index) {
+        final DownloadTask task = tasks[index];
+        return M3EListItem(
+          leading: M3EListImage(child: _cover(task, scheme)),
+          headline: task.title,
+          supportingText:
+              '${task.platform} · ${task.qualityLabel} · ${formatBytes(task.totalBytes > 0 ? task.totalBytes : task.receivedBytes)}',
+          swipe: M3EListItemSwipe(
+            mode: M3EListSwipeMode.both,
+            edge: M3EListSwipeEdge.end,
+            onDismiss: (DismissDirection direction) async {
+              store.removeTask(task);
+              return true;
+            },
+            trailing: <M3EListSwipeAction>[
+              M3EListSwipeAction(
+                icon: const Icon(Icons.delete_outline),
+                backgroundColor: scheme.errorContainer,
+                foregroundColor: scheme.onErrorContainer,
+                isPrimary: true,
+                onPressed: () => store.removeTask(task),
+              ),
+            ],
           ),
-          M3EIconButton(
-            icon: const Icon(Icons.delete_outline),
-            variant: M3EIconButtonVariant.standard,
-            tooltip: '删除',
-            onPressed: () => store.removeTask(task),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 

@@ -48,52 +48,66 @@ class SettingsView extends StatelessWidget {
             const SizedBox(height: 24),
             _sectionLabel(theme, scheme, '下载'),
             const SizedBox(height: 10),
-            _navRow(
-              theme,
-              scheme,
-              icon: Icons.folder_rounded,
-              title: '保存位置',
-              subtitle: settings.saveToGallery
-                  ? '相册 · ${AppConstants.albumName}'
-                  : '下载 / ClipKeep',
-              tooltip: '保存位置',
-              onTap: () => _showSaveLocation(context, settings),
-            ),
-            const SizedBox(height: 8),
-            _switchRow(
-              theme,
-              scheme,
-              icon: Icons.image_rounded,
-              title: '下载后保存到相册',
-              subtitle: '完成后自动写入系统相册',
-              tooltip: '下载后保存到相册',
-              semanticLabel: '下载后保存到相册',
-              value: settings.saveToGallery,
-              onChanged: (bool v) => settings.setSaveToGallery(v),
+            M3EList(
+              itemCount: 2,
+              itemBuilder: (BuildContext context, int index) {
+                if (index == 0) {
+                  return M3EListItem(
+                    leading: const Icon(Icons.folder_rounded),
+                    headline: '保存位置',
+                    supportingText: settings.saveToGallery
+                        ? '相册 · ${AppConstants.albumName}'
+                        : '下载 / ClipKeep',
+                    trailing: Icon(
+                      Icons.chevron_right,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    onTap: () => _showSaveLocation(context, settings),
+                  );
+                }
+                return M3EListItem(
+                  leading: const Icon(Icons.image_rounded),
+                  headline: '下载后保存到相册',
+                  supportingText: '完成后自动写入系统相册',
+                  trailing: M3ESwitch(
+                    value: settings.saveToGallery,
+                    selectedIcon: const Icon(M3EIcons.check),
+                    semanticLabel: '下载后保存到相册',
+                    onChanged: (bool v) => settings.setSaveToGallery(v),
+                  ),
+                );
+              },
             ),
             const SizedBox(height: 24),
             _sectionLabel(theme, scheme, '外观与关于'),
             const SizedBox(height: 10),
-            _switchRow(
-              theme,
-              scheme,
-              icon: Icons.palette_rounded,
-              title: '动态取色',
-              subtitle: '跟随系统壁纸生成主题色',
-              tooltip: '动态取色',
-              semanticLabel: '动态取色',
-              value: settings.dynamicColor,
-              onChanged: (bool v) => settings.setDynamicColor(v),
-            ),
-            const SizedBox(height: 8),
-            _navRow(
-              theme,
-              scheme,
-              icon: Icons.description_rounded,
-              title: '开源许可',
-              subtitle: '第三方组件与来源声明',
-              tooltip: '开源许可',
-              onTap: () => _showLicenses(context),
+            M3EList(
+              itemCount: 2,
+              itemBuilder: (BuildContext context, int index) {
+                if (index == 0) {
+                  return M3EListItem(
+                    leading: const Icon(Icons.palette_rounded),
+                    headline: '动态取色',
+                    supportingText: '跟随系统壁纸生成主题色',
+                    trailing: M3ESwitch(
+                      value: settings.dynamicColor,
+                      selectedIcon: const Icon(M3EIcons.check),
+                      semanticLabel: '动态取色',
+                      onChanged: (bool v) => settings.setDynamicColor(v),
+                    ),
+                  );
+                }
+                return M3EListItem(
+                  leading: const Icon(Icons.description_rounded),
+                  headline: '开源许可',
+                  supportingText: '第三方组件与来源声明',
+                  trailing: Icon(
+                    Icons.chevron_right,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                  onTap: () => _showLicenses(context),
+                );
+              },
             ),
           ],
         ),
@@ -313,125 +327,6 @@ class SettingsView extends StatelessWidget {
           fontWeight: FontWeight.w700,
           color: fg,
         ),
-      ),
-    );
-  }
-
-  Widget _iconBox(ColorScheme scheme, IconData icon) {
-    return Container(
-      width: 44,
-      height: 44,
-      decoration: BoxDecoration(
-        color: scheme.primaryContainer,
-        shape: BoxShape.circle,
-      ),
-      child: Icon(icon, size: 22, color: scheme.onPrimaryContainer),
-    );
-  }
-
-  Widget _navRow(
-    ThemeData theme,
-    ColorScheme scheme, {
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required String tooltip,
-    required VoidCallback onTap,
-  }) {
-    return Tooltip(
-      message: tooltip,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: scheme.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-          ),
-          child: Row(
-            children: <Widget>[
-              _iconBox(scheme, icon),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      title,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _switchRow(
-    ThemeData theme,
-    ColorScheme scheme, {
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required String tooltip,
-    required String semanticLabel,
-    required bool value,
-    required ValueChanged<bool> onChanged,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-      ),
-      child: Row(
-        children: <Widget>[
-          _iconBox(scheme, icon),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  title,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Tooltip(
-            message: tooltip,
-            child: M3ESwitch(
-              value: value,
-              selectedIcon: const Icon(M3EIcons.check),
-              semanticLabel: semanticLabel,
-              onChanged: onChanged,
-            ),
-          ),
-        ],
       ),
     );
   }
