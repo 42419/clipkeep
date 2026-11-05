@@ -190,6 +190,7 @@ class DownloaderStore extends ChangeNotifier {
     _tokens.remove(task.id);
     unawaited(_deleteThumbQuietly(task.thumbnailPath));
     _tasks.remove(task);
+    unawaited(_persistCompleted());
     notifyListeners();
   }
 
