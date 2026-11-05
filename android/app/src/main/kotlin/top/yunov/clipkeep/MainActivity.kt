@@ -5,6 +5,7 @@ import android.media.MediaScannerConnection
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.webkit.CookieManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -13,9 +14,38 @@ import java.io.FileInputStream
 
 class MainActivity : FlutterActivity() {
     private val channelName = "clipkeep/media_store"
+    private val cookieChannelName = "clipkeep/webview_cookie"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, cookieChannelName)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "getCookie" -> {
+                        val url = call.argument<String>("url")
+                        if (url == null) {
+                            result.error("bad_args", "url required", null)
+                        } else {
+                            try {
+                                val manager = CookieManager.getInstance()
+                                manager.setAcceptCookie(true)
+                                result.success(manager.getCookie(url))
+                            } catch (e: Exception) {
+                                result.error("cookie_failed", e.message, null)
+                            }
+                        }
+                    }
+                    "flush" -> {
+                        try {
+                            CookieManager.getInstance().flush()
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.error("cookie_failed", e.message, null)
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
             .setMethodCallHandler { call, result ->
                 when (call.method) {

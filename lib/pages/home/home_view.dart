@@ -8,10 +8,12 @@ import 'package:material_ui/material_ui.dart'
     hide CornerRounding, RoundedPolygon;
 import 'package:provider/provider.dart';
 
+import '../../stores/auth_store.dart';
 import '../../stores/downloader_store.dart';
 import '../../stores/main_tab_controller.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/format.dart';
+import '../login/bilibili_login_page.dart';
 import '../result_page.dart';
 
 /// 首页：按 Figma 设计稿实现。
@@ -246,6 +248,75 @@ class _HomeViewState extends State<HomeView> {
   }
 
   Widget _buildLoginCard(ThemeData theme, ColorScheme scheme) {
+    final AuthStore auth = context.watch<AuthStore>();
+    if (auth.isLoggedIn) {
+      final String uname =
+          (auth.uname != null && auth.uname!.isNotEmpty) ? auth.uname! : '已登录';
+      final String face = auth.face ?? '';
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+        ),
+        child: Row(
+          children: <Widget>[
+            ClipOval(
+              child: SizedBox(
+                width: 48,
+                height: 48,
+                child: face.isNotEmpty
+                    ? Image.network(
+                        face,
+                        fit: BoxFit.cover,
+                        headers: _imageHeaders,
+                        errorBuilder: (
+                          BuildContext context,
+                          Object error,
+                          StackTrace? stackTrace,
+                        ) => _biliAvatar(),
+                      )
+                    : _biliAvatar(),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    '哔哩哔哩 · $uname',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    auth.vip ? '大会员 · 高清画质已解锁' : '已登录 · 可解析高清画质',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            M3EButton(
+              onPressed: () {
+                unawaited(context.read<AuthStore>().logout());
+              },
+              tooltip: '退出登录',
+              label: const Text('退出'),
+              size: M3EButtonSize.sm,
+              style: M3EButtonStyle.tonal,
+            ),
+          ],
+        ),
+      );
+    }
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -254,19 +325,7 @@ class _HomeViewState extends State<HomeView> {
       ),
       child: Row(
         children: <Widget>[
-          M3EShapeContainer(
-            kind: M3EShapeKind.cookie9Sided,
-            height: 48,
-            width: 48,
-            color: const Color(0xFFF2A0A8),
-            child: Center(
-              child: FaIcon(
-                FontAwesomeIcons.bilibili,
-                color: Colors.white,
-                size: 20,
-              ),
-            ),
-          ),
+          _biliAvatar(),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
@@ -289,7 +348,7 @@ class _HomeViewState extends State<HomeView> {
             ),
           ),
           M3EButton(
-            onPressed: () {},
+            onPressed: _openLogin,
             tooltip: '登录',
             icon: const Icon(Icons.login),
             label: const Text('登录'),
@@ -299,6 +358,42 @@ class _HomeViewState extends State<HomeView> {
         ],
       ),
     );
+  }
+
+  Widget _biliAvatar() {
+    return Container(
+      width: 48,
+      height: 48,
+      decoration: const BoxDecoration(
+        color: Color(0xFFF2A0A8),
+        shape: BoxShape.circle,
+      ),
+      child: Center(
+        child: FaIcon(
+          FontAwesomeIcons.bilibili,
+          color: Colors.white,
+          size: 20,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openLogin() async {
+    final bool? ok = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (BuildContext context) => const BilibiliLoginPage(),
+      ),
+    );
+    if (!mounted) {
+      return;
+    }
+    if (ok == true) {
+      final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+      messenger.clearSnackBars();
+      messenger.showSnackBar(
+        const SnackBar(content: Text('登录成功，已解锁高清画质')),
+      );
+    }
   }
 
   Widget _buildRecent(
