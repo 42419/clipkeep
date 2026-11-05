@@ -3,19 +3,19 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 
-import '../utils/bdl_service.dart';
 import '../utils/media_downloader.dart';
 import '../utils/result.dart';
 import '../viewmodels/download_task.dart';
 import '../viewmodels/parsed_source.dart';
+import 'bilibili_resolver.dart';
 
 /// 数据接口层：封装 B 站解析与媒体下载，供 Store 调用。
 class DownloaderApi {
-  DownloaderApi({BdlService? bdlService, MediaDownloader? mediaDownloader})
-    : _bdl = bdlService ?? const BdlService(),
+  DownloaderApi({BilibiliResolver? resolver, MediaDownloader? mediaDownloader})
+    : _resolver = resolver ?? BilibiliResolver(),
       _media = mediaDownloader ?? MediaDownloader();
 
-  final BdlService _bdl;
+  final BilibiliResolver _resolver;
   final MediaDownloader _media;
 
   final Dio _http = Dio(
@@ -32,35 +32,25 @@ class DownloaderApi {
     ),
   );
 
-  Future<Result<ParsedSource>> parse(
-    String input, {
-    String? cookie,
-  }) async {
-    final dir = await getApplicationSupportDirectory();
-    final String normalized = await _normalizeInput(input);
-    final response = await _bdl.parse(
-      input: normalized,
-      stateDir: dir.path,
-      withStreams: true,
-      cookie: cookie,
-    );
-    if (!response.ok) {
-      return Err(AppError(response.error ?? '解析失败'));
-    }
-    final data = response.data;
-    if (data == null) {
-      return const Err(AppError('解析结果为空'));
-    }
+  Future<Result<ParsedSource>> parse(String input, {String? cookie}) async {
     try {
-      return Ok(await _toParsedSource(data));
+      final String normalized = await _normalizeInput(input);
+      final ParsedSource source = await _resolver.resolve(
+        normalized,
+        cookie: cookie,
+      );
+      return Ok(source);
+    } on BiliResolveException catch (e) {
+      return Err(AppError(e.message, cause: e));
     } catch (e) {
-      return Err(AppError('解析结果格式异常', cause: e));
+      return Err(AppError('解析失败', cause: e));
     }
   }
 
   static const Map<String, String> _imageHeaders = <String, String>{
     'referer': 'https://www.bilibili.com/',
-    'user-agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
+    'user-agent':
+        'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
         '(KHTML, like Gecko) Chrome/124 Mobile Safari/537.36',
   };
 
@@ -122,11 +112,10 @@ class DownloaderApi {
 
   static final RegExp _urlPattern = RegExp(r'https?://[^\s]+');
   static final RegExp _bvPattern = RegExp(r'BV[0-9A-Za-z]{10}');
-  static final RegExp _trailingPunctuation =
-      RegExp(r'[),.;!?，。；！？、）】》」』]+$');
+  static final RegExp _trailingPunctuation = RegExp(r'[),.;!?，。；！？、）】》」』]+$');
 
-  /// 把用户输入归一化为 bdl 可识别形式：完整链接、含标题的分享文本、b23 短链都可。
-  /// 视频链接优先提取 BV 号直接交给 bdl；其它类型保留（解析后的）完整链接。
+  /// 把用户输入归一化为可解析形式：完整链接、含标题的分享文本、b23 短链都可。
+  /// 视频链接优先提取 BV 号；其它类型保留（解析后的）完整链接。
   Future<String> _normalizeInput(String raw) async {
     final String text = raw.trim();
     final RegExpMatch? match = _urlPattern.firstMatch(text);
@@ -135,8 +124,7 @@ class DownloaderApi {
       return bv?.group(0) ?? text;
     }
     String url = match.group(0)!.replaceAll(_trailingPunctuation, '');
-    final bool isShort =
-        url.contains('b23.tv') || url.contains('bili2233.cn');
+    final bool isShort = url.contains('b23.tv') || url.contains('bili2233.cn');
     if (isShort) {
       final String? resolved = await _resolveShortLink(url);
       if (resolved != null) {
@@ -150,7 +138,7 @@ class DownloaderApi {
     return url;
   }
 
-  /// 跟随 b23.tv 重定向取最终地址；失败返回 null（回退原短链，bdl 仍会尝试展开）。
+  /// 跟随 b23.tv 重定向取最终地址；失败返回 null（回退原短链）。
   Future<String?> _resolveShortLink(String shortUrl) async {
     try {
       final Response<dynamic> response = await _http.get<dynamic>(
@@ -190,101 +178,6 @@ class DownloaderApi {
       cookie: cookie,
       cancelToken: cancelToken,
       onProgress: onProgress,
-    );
-  }
-
-  Future<ParsedSource> _toParsedSource(Map<String, dynamic> tree) async {
-    final source =
-        (tree['source'] as Map?)?.cast<String, dynamic>() ??
-        <String, dynamic>{};
-    final groups = (tree['groups'] as List?) ?? const <dynamic>[];
-    final items = <Map<String, dynamic>>[];
-    for (final group in groups) {
-      final groupMap = (group as Map).cast<String, dynamic>();
-      final list = (groupMap['items'] as List?) ?? const <dynamic>[];
-      for (final item in list) {
-        items.add((item as Map).cast<String, dynamic>());
-      }
-    }
-    final first = items.isNotEmpty ? items.first : <String, dynamic>{};
-    final parts = <MediaPart>[];
-    final rawParts = (first['parts'] as List?) ?? const <dynamic>[];
-    for (final part in rawParts) {
-      parts.add(_toPart((part as Map).cast<String, dynamic>()));
-    }
-    final int? ownerMid = (first['owner_mid'] as num?)?.toInt();
-    final String? avatarUrl = await _fetchAvatar(ownerMid);
-    return ParsedSource(
-      title:
-          (first['title'] as String?) ?? (source['title'] as String?) ?? '未知标题',
-      author: (first['owner_name'] as String?) ?? '',
-      coverUrl: first['cover_url'] as String?,
-      publishDate: first['publish_date'] as String?,
-      ownerMid: ownerMid,
-      authorAvatarUrl: avatarUrl,
-      parts: parts,
-    );
-  }
-
-  /// 用 UP 主 mid 调 B 站 card 接口取头像；失败不影响解析。
-  Future<String?> _fetchAvatar(int? mid) async {
-    if (mid == null) {
-      return null;
-    }
-    try {
-      final res = await _http.get<dynamic>(
-        'https://api.bilibili.com/x/web-interface/card',
-        queryParameters: <String, dynamic>{'mid': mid, 'photo': 'false'},
-      );
-      final data = res.data as Map?;
-      if (data != null && data['code'] == 0) {
-        final card = (data['data'] as Map?)?['card'] as Map?;
-        final face = card?['face'];
-        if (face is String && face.isNotEmpty) {
-          return face;
-        }
-      }
-    } catch (_) {
-      // 忽略：取头像失败时回退到图标
-    }
-    return null;
-  }
-
-  MediaPart _toPart(Map<String, dynamic> part) {
-    final streams = <MediaStream>[];
-    final rawStreams = (part['streams'] as List?) ?? const <dynamic>[];
-    for (final stream in rawStreams) {
-      final streamMap = (stream as Map).cast<String, dynamic>();
-      final quality = (streamMap['quality'] as Map?)?.cast<String, dynamic>();
-      final headers = <String, String>{};
-      final rawHeaders = (streamMap['headers'] as List?) ?? const <dynamic>[];
-      for (final header in rawHeaders) {
-        final headerMap = (header as Map).cast<String, dynamic>();
-        final name = headerMap['name'] as String?;
-        final value = headerMap['value'] as String?;
-        if (name != null && value != null) {
-          headers[name] = value;
-        }
-      }
-      final urls = ((streamMap['urls'] as List?) ?? const <dynamic>[])
-          .map((e) => e.toString())
-          .toList();
-      streams.add(
-        MediaStream(
-          kind: (streamMap['kind'] as String?) ?? '',
-          quality: (quality?['value'] as num?)?.toInt() ?? 0,
-          codec: (streamMap['codec'] as String?) ?? '',
-          urls: urls,
-          headers: headers,
-          bandwidth: (streamMap['bandwidth'] as num?)?.toInt(),
-        ),
-      );
-    }
-    return MediaPart(
-      id: (part['id'] as String?) ?? '',
-      title: (part['title'] as String?) ?? '',
-      durationSeconds: (part['duration_seconds'] as num?)?.toInt(),
-      streams: streams,
     );
   }
 }
