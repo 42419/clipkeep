@@ -49,9 +49,10 @@ class BilibiliResolver {
             ),
           );
 
+  // 用桌面 Chrome UA：B 站 upos CDN 会校验 UA，移动端 UA 对签名媒体地址会返回 403。
   static const String _userAgent =
-      'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
-      '(KHTML, like Gecko) Chrome/124 Mobile Safari/537.36';
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+      '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
   static const String _navUrl = 'https://api.bilibili.com/x/web-interface/nav';
   static const String _viewUrl =
