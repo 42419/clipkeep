@@ -13,11 +13,12 @@ import '../viewmodels/parsed_source.dart';
 
 /// 状态管理（Provider + ChangeNotifier）：解析 + 下载任务列表。
 class DownloaderStore extends ChangeNotifier {
-  DownloaderStore(this._api) {
+  DownloaderStore(this._api, {this.cookieProvider}) {
     unawaited(_loadHistory());
   }
 
   final DownloaderApi _api;
+  final String? Function()? cookieProvider;
   final List<DownloadTask> _tasks = <DownloadTask>[];
   final Map<String, CancelToken> _tokens = <String, CancelToken>{};
 
@@ -48,7 +49,10 @@ class DownloaderStore extends ChangeNotifier {
     _error = null;
     _savedMessage = null;
     notifyListeners();
-    final Result<ParsedSource> result = await _api.parse(input);
+    final Result<ParsedSource> result = await _api.parse(
+      input,
+      cookie: cookieProvider?.call(),
+    );
     if (result is Ok<ParsedSource>) {
       _source = result.value;
     } else if (result is Err<ParsedSource>) {
@@ -140,6 +144,7 @@ class DownloaderStore extends ChangeNotifier {
       coverOnly: task.coverOnly,
       saveCover: task.saveCover,
       coverUrl: task.coverUrl,
+      cookie: cookieProvider?.call(),
       cancelToken: token,
       onProgress: (DownloadProgress p) {
         task.progress = p.fraction;

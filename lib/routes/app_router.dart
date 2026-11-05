@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../api/downloader_api.dart';
 import '../pages/main_page.dart';
+import '../stores/auth_store.dart';
 import '../stores/downloader_store.dart';
 import '../stores/main_tab_controller.dart';
 import '../theme/app_theme.dart';
@@ -13,8 +14,12 @@ import '../theme/app_theme.dart';
 Widget getRootWidget() {
   return MultiProvider(
     providers: [
+      ChangeNotifierProvider<AuthStore>(create: (_) => AuthStore()..load()),
       ChangeNotifierProvider<DownloaderStore>(
-        create: (_) => DownloaderStore(DownloaderApi()),
+        create: (BuildContext ctx) => DownloaderStore(
+          DownloaderApi(),
+          cookieProvider: () => ctx.read<AuthStore>().cookie,
+        ),
       ),
       ChangeNotifierProvider<MainTabController>(
         create: (_) => MainTabController(),
