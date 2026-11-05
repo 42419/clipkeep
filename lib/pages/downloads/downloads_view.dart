@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:material_3_expressive/material_3_expressive.dart';
@@ -9,6 +10,7 @@ import '../../stores/downloader_store.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/format.dart';
 import '../../viewmodels/download_task.dart';
+import '../result_page.dart';
 
 /// 下载页：真实下载任务（进行中 / 已完成）。
 class DownloadsView extends StatefulWidget {
@@ -183,13 +185,17 @@ class _DownloadsViewState extends State<DownloadsView> {
     );
   }
 
-  Future<void> _confirmClearCompleted(DownloaderStore store) async {
+  Future<bool> _confirmAction({
+    required String title,
+    required String content,
+    required String confirmLabel,
+  }) async {
     final bool? confirmed = await M3EDialog.show<bool>(
       context,
       dialog: M3EDialog(
-        title: '清空已完成记录？',
+        title: title,
         icon: const Icon(M3EIcons.error),
-        content: const Text('只删除下载记录，不会删除已保存到相册或下载目录的文件。'),
+        content: Text(content),
         actions: <Widget>[
           M3EButton.text(
             onPressed: () => Navigator.of(context).pop(false),
@@ -200,15 +206,67 @@ class _DownloadsViewState extends State<DownloadsView> {
           M3EButton.filled(
             onPressed: () => Navigator.of(context).pop(true),
             size: M3EButtonSize.md,
-            tooltip: '清空',
-            child: const Text('清空'),
+            tooltip: confirmLabel,
+            child: Text(confirmLabel),
           ),
         ],
       ),
     );
-    if (confirmed == true) {
+    return confirmed == true;
+  }
+
+  Future<void> _confirmClearCompleted(DownloaderStore store) async {
+    final bool ok = await _confirmAction(
+      title: '清空已完成记录？',
+      content: '只删除下载记录，不会删除已保存到相册或下载目录的文件。',
+      confirmLabel: '清空',
+    );
+    if (ok) {
       store.clearCompleted();
     }
+  }
+
+  Future<void> _confirmDeleteTask(
+    DownloaderStore store,
+    DownloadTask task,
+  ) async {
+    final bool ok = await _confirmAction(
+      title: '删除这条记录？',
+      content: '只删除下载记录，不会删除已保存到相册或下载目录的文件。',
+      confirmLabel: '删除',
+    );
+    if (ok) {
+      store.removeTask(task);
+    }
+  }
+
+  void _reparseTask(DownloaderStore store, DownloadTask task) {
+    final String? input = _taskInput(task);
+    if (input == null) {
+      final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+      messenger.clearSnackBars();
+      messenger.showSnackBar(const SnackBar(content: Text('无法重新解析该记录')));
+      return;
+    }
+    unawaited(store.parse(input));
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => const ResultPage(),
+      ),
+    );
+  }
+
+  String? _taskInput(DownloadTask task) {
+    final String? id = task.part?.id;
+    if (id == null) {
+      return null;
+    }
+    final int idx = id.lastIndexOf('-');
+    if (idx <= 0) {
+      return null;
+    }
+    final String head = id.substring(0, idx);
+    return head.startsWith('BV') ? head : 'av$head';
   }
 
   Widget _buildEmpty(ThemeData theme, ColorScheme scheme) {
@@ -410,19 +468,21 @@ class _DownloadsViewState extends State<DownloadsView> {
           supportingText:
               '${task.platform} · ${task.qualityLabel} · ${formatBytes(task.totalBytes > 0 ? task.totalBytes : task.receivedBytes)}',
           swipe: M3EListItemSwipe(
-            mode: M3EListSwipeMode.both,
+            mode: M3EListSwipeMode.reveal,
             edge: M3EListSwipeEdge.end,
-            onDismiss: (DismissDirection direction) async {
-              store.removeTask(task);
-              return true;
-            },
             trailing: <M3EListSwipeAction>[
+              M3EListSwipeAction(
+                icon: const Icon(Icons.refresh),
+                backgroundColor: scheme.secondaryContainer,
+                foregroundColor: scheme.onSecondaryContainer,
+                onPressed: () => _reparseTask(store, task),
+              ),
               M3EListSwipeAction(
                 icon: const Icon(Icons.delete_outline),
                 backgroundColor: scheme.errorContainer,
                 foregroundColor: scheme.onErrorContainer,
                 isPrimary: true,
-                onPressed: () => store.removeTask(task),
+                onPressed: () => _confirmDeleteTask(store, task),
               ),
             ],
           ),

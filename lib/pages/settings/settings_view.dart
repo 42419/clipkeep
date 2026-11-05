@@ -49,6 +49,7 @@ class SettingsView extends StatelessWidget {
             _sectionLabel(theme, scheme, '下载'),
             const SizedBox(height: 10),
             M3EList(
+              color: scheme.surfaceContainerLow,
               itemCount: 2,
               itemBuilder: (BuildContext context, int index) {
                 if (index == 0) {
@@ -82,6 +83,7 @@ class SettingsView extends StatelessWidget {
             _sectionLabel(theme, scheme, '外观与关于'),
             const SizedBox(height: 10),
             M3EList(
+              color: scheme.surfaceContainerLow,
               itemCount: 2,
               itemBuilder: (BuildContext context, int index) {
                 if (index == 0) {
