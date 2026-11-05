@@ -32,13 +32,17 @@ class DownloaderApi {
     ),
   );
 
-  Future<Result<ParsedSource>> parse(String input) async {
+  Future<Result<ParsedSource>> parse(
+    String input, {
+    String? cookie,
+  }) async {
     final dir = await getApplicationSupportDirectory();
     final String normalized = await _normalizeInput(input);
     final response = await _bdl.parse(
       input: normalized,
       stateDir: dir.path,
       withStreams: true,
+      cookie: cookie,
     );
     if (!response.ok) {
       return Err(AppError(response.error ?? '解析失败'));
@@ -172,6 +176,7 @@ class DownloaderApi {
     bool coverOnly = false,
     bool saveCover = false,
     String? coverUrl,
+    String? cookie,
     CancelToken? cancelToken,
     void Function(DownloadProgress progress)? onProgress,
   }) {
@@ -182,6 +187,7 @@ class DownloaderApi {
       coverOnly: coverOnly,
       saveCover: saveCover,
       coverUrl: coverUrl,
+      cookie: cookie,
       cancelToken: cancelToken,
       onProgress: onProgress,
     );

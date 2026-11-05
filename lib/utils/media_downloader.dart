@@ -20,6 +20,16 @@ class MediaDownloader {
 
   static const MethodChannel _mediaStore = MethodChannel('clipkeep/media_store');
 
+  String? _cookie;
+
+  Map<String, String> _withCookie(Map<String, String> base) {
+    final String? cookie = _cookie;
+    if (cookie == null || cookie.isEmpty) {
+      return base;
+    }
+    return <String, String>{...base, 'cookie': cookie};
+  }
+
   static const Map<String, String> _imageHeaders = <String, String>{
     'referer': 'https://www.bilibili.com/',
     'user-agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
@@ -33,9 +43,11 @@ class MediaDownloader {
     bool coverOnly = false,
     bool saveCover = false,
     String? coverUrl,
+    String? cookie,
     CancelToken? cancelToken,
     void Function(DownloadProgress progress)? onProgress,
   }) async {
+    _cookie = cookie;
     try {
       final dir =
           await getExternalStorageDirectory() ??
@@ -239,7 +251,7 @@ class MediaDownloader {
         coverPath,
         cancelToken: cancelToken,
         options: Options(
-          headers: _imageHeaders,
+          headers: _withCookie(_imageHeaders),
           receiveTimeout: const Duration(minutes: 5),
         ),
         onReceiveProgress: (int received, int total) {
@@ -280,7 +292,7 @@ class MediaDownloader {
         url,
         coverPath,
         options: Options(
-          headers: _imageHeaders,
+          headers: _withCookie(_imageHeaders),
           receiveTimeout: const Duration(minutes: 5),
         ),
       );
@@ -377,7 +389,7 @@ class MediaDownloader {
                   cancelToken: cancelToken,
                   options: Options(
                     headers: <String, String>{
-                      ...stream.headers,
+                      ..._withCookie(stream.headers),
                       'Range': 'bytes=$start-$end',
                     },
                     followRedirects: true,
@@ -439,7 +451,7 @@ class MediaDownloader {
       destination,
       cancelToken: cancelToken,
       options: Options(
-        headers: stream.headers,
+        headers: _withCookie(stream.headers),
         followRedirects: true,
         receiveTimeout: const Duration(minutes: 30),
       ),
@@ -461,7 +473,7 @@ class MediaDownloader {
         options: Options(
           responseType: ResponseType.bytes,
           headers: <String, String>{
-            ...stream.headers,
+            ..._withCookie(stream.headers),
             'Range': 'bytes=0-1',
           },
           validateStatus: (int? status) => status != null && status < 500,
