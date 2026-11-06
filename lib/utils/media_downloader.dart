@@ -40,13 +40,28 @@ class MediaDownloader {
   }
 
   /// 只把 B 站 Cookie 发给 B 站域名，避免把登录凭据泄露给抖音等第三方 CDN。
+  /// 必须按 host 的后缀匹配：`contains('bilibili.com')` 会把
+  /// `bilibili.com.evil.example` 或带该字样的路径也算作 B 站。
   bool _isBiliHost(String? url) {
-    final String u = (url ?? '').toLowerCase();
-    return u.contains('bilibili.com') ||
-        u.contains('bilivideo.com') ||
-        u.contains('hdslb.com') ||
-        u.contains('b23.tv');
+    final String host = (Uri.tryParse(url ?? '')?.host ?? '').toLowerCase();
+    if (host.isEmpty) {
+      return false;
+    }
+    for (final String domain in _biliDomains) {
+      if (host == domain || host.endsWith('.$domain')) {
+        return true;
+      }
+    }
+    return false;
   }
+
+  static const List<String> _biliDomains = <String>[
+    'bilibili.com',
+    'bilivideo.com',
+    'hdslb.com',
+    'b23.tv',
+    'bili2233.cn',
+  ];
 
   /// 把异常转成简短可读文案，便于在下载失败卡片上定位问题。
   String _describe(Object e) {
@@ -94,6 +109,7 @@ class MediaDownloader {
           agg,
           cancelToken,
           onProgress,
+          saveToGallery: saveToGallery,
         );
       }
       if (audioOnly) {
@@ -166,6 +182,10 @@ class MediaDownloader {
     if (hasAudio) {
       agg.finishStreamKey('audio');
     }
+    // 暂停发生在下载收尾阶段：保留 m4s 供续传，直接交给上层按「已暂停」处理。
+    if (cancelToken?.isCancelled ?? false) {
+      return const Err(AppError('已暂停'));
+    }
     final DownloadProgress beforeMerge = agg.snapshot();
     onProgress?.call(
       DownloadProgress(
@@ -212,7 +232,18 @@ class MediaDownloader {
       await _cleanupQuietly(<String>[outputPath]);
       return Err(AppError('调用 FFmpeg 失败：${_describe(e)}', cause: e));
     }
+    // 合并不可通过 Dio 取消，需显式终止 FFmpeg 会话，否则暂停后仍会写入相册。
+    final CancelToken? token = cancelToken;
+    if (token != null) {
+      unawaited(
+        token.whenCancel.then((_) => FFmpegKit.cancel(session.getSessionId())),
+      );
+    }
     final ReturnCode? returnCode = await merge.future;
+    if (cancelToken?.isCancelled ?? false) {
+      await _cleanupQuietly(<String>[outputPath]);
+      return const Err(AppError('已暂停'));
+    }
     if (!ReturnCode.isSuccess(returnCode)) {
       final String? logs = await session.getOutput();
       await _cleanupQuietly(<String>[outputPath]);
@@ -224,29 +255,57 @@ class MediaDownloader {
       DownloadProgress(fraction: 1, receivedBytes: outLen, totalBytes: outLen),
     );
 
+    if (cancelToken?.isCancelled ?? false) {
+      await _cleanupQuietly(<String>[outputPath]);
+      return const Err(AppError('已暂停'));
+    }
+
     if (!saveToGallery) {
-      final Directory outDir = Directory('$dirPath/ClipKeep');
-      if (!await outDir.exists()) {
-        await outDir.create(recursive: true);
+      final String? saved = await _saveToDownloads(
+        outputPath,
+        'ClipKeep_$stamp.mp4',
+        'video/mp4',
+      );
+      if (saved == null) {
+        await _cleanupQuietly(<String>[outputPath]);
+        return const Err(AppError('保存到下载目录失败（可能缺少存储权限）'));
       }
-      final String finalPath = '${outDir.path}/ClipKeep_$stamp.mp4';
-      await _moveFile(outputPath, finalPath);
-      await _cleanupQuietly(<String>[videoPath, audioPath]);
-      return Ok('已保存到 下载/ClipKeep：$finalPath');
+      // 关闭相册时同样要处理「视频+封面」，否则选项静默失效。
+      bool coverSaved = false;
+      if (saveCover) {
+        coverSaved = await _saveCover(
+          coverUrl,
+          dirPath,
+          stamp,
+          saveToGallery: false,
+        );
+      }
+      await _cleanupQuietly(<String>[videoPath, audioPath, outputPath]);
+      return Ok(coverSaved ? '已保存视频与封面到 Download/ClipKeep' : '已保存到 $saved');
     }
 
     if (!await _ensureGalleryAccess()) {
       await _cleanupQuietly(<String>[outputPath]);
       return const Err(AppError('没有相册写入权限'));
     }
-    await Gal.putVideo(outputPath, album: AppConstants.albumName);
+    try {
+      await Gal.putVideo(outputPath, album: AppConstants.albumName);
+    } catch (e) {
+      await _cleanupQuietly(<String>[outputPath]);
+      return Err(AppError('保存到相册失败：${_describe(e)}', cause: e));
+    }
 
     bool coverSaved = false;
     if (saveCover) {
-      coverSaved = await _saveCover(coverUrl, dirPath, stamp);
+      coverSaved = await _saveCover(
+        coverUrl,
+        dirPath,
+        stamp,
+        saveToGallery: saveToGallery,
+      );
     }
     await _cleanupQuietly(<String>[videoPath, audioPath, outputPath]);
-    return Ok(coverSaved ? '已保存视频与封面（ClipKeep）' : '已保存到相册（ClipKeep）');
+    return Ok(coverSaved ? '已保存视频与封面到相册（ClipKeep）' : '已保存到相册（ClipKeep）');
   }
 
   Future<Result<String>> _downloadAudioOnly(
@@ -279,17 +338,16 @@ class MediaDownloader {
       onProgress,
     );
     agg.finishStreamKey('audio');
+    if (cancelToken?.isCancelled ?? false) {
+      return const Err(AppError('已暂停'));
+    }
 
     final String displayName = 'ClipKeep_audio_$stamp.m4a';
-    String? savedPath;
-    try {
-      savedPath = await _mediaStore.invokeMethod<String>(
-        'saveAudio',
-        <String, String>{'path': tempPath, 'displayName': displayName},
-      );
-    } catch (_) {
-      savedPath = null;
-    }
+    final String? savedPath = await _saveToDownloads(
+      tempPath,
+      displayName,
+      'audio/mp4',
+    );
 
     final int audioLen = await File(tempPath).length();
     onProgress?.call(
@@ -302,7 +360,7 @@ class MediaDownloader {
 
     if (savedPath != null) {
       await _cleanupQuietly(<String>[tempPath]);
-      return Ok('已保存音频到 下载/ClipKeep：$displayName');
+      return Ok('已保存音频到 $savedPath');
     }
 
     final outDir = Directory('$dirPath/ClipKeep');
@@ -316,7 +374,7 @@ class MediaDownloader {
       await File(tempPath).copy(fallbackPath);
       await _cleanupQuietly(<String>[tempPath]);
     }
-    return Ok('已保存音频：$fallbackPath');
+    return Ok('已保存音频到应用目录（卸载后删除）：$fallbackPath');
   }
 
   /// 无独立音频流时（如抖音单文件 mp4）：下载视频后用 FFmpeg 抽取音轨。
@@ -342,6 +400,9 @@ class MediaDownloader {
       onProgress,
     );
     agg.finishStreamKey('video');
+    if (cancelToken?.isCancelled ?? false) {
+      return const Err(AppError('已暂停'));
+    }
 
     final String outPath = '$dirPath/clipkeep_audio_$stamp.m4a';
     FFmpegSession session = await FFmpegKit.execute(
@@ -358,18 +419,19 @@ class MediaDownloader {
       await _cleanupQuietly(<String>[tempVideo, outPath]);
       return const Err(AppError('提取音频失败'));
     }
+    // 抽取本身是阻塞调用，暂停请求只能在这里生效：丢弃音轨，保留视频源供续传。
+    if (cancelToken?.isCancelled ?? false) {
+      await _cleanupQuietly(<String>[outPath]);
+      return const Err(AppError('已暂停'));
+    }
     await _cleanupQuietly(<String>[tempVideo]);
 
     final String displayName = 'ClipKeep_audio_$stamp.m4a';
-    String? savedPath;
-    try {
-      savedPath = await _mediaStore.invokeMethod<String>(
-        'saveAudio',
-        <String, String>{'path': outPath, 'displayName': displayName},
-      );
-    } catch (_) {
-      savedPath = null;
-    }
+    final String? savedPath = await _saveToDownloads(
+      outPath,
+      displayName,
+      'audio/mp4',
+    );
     final int audioLen = await File(outPath).length();
     onProgress?.call(
       DownloadProgress(
@@ -380,7 +442,7 @@ class MediaDownloader {
     );
     if (savedPath != null) {
       await _cleanupQuietly(<String>[outPath]);
-      return Ok('已保存音频到 下载/ClipKeep：$displayName');
+      return Ok('已保存音频到 $savedPath');
     }
     final Directory outDir = Directory('$dirPath/ClipKeep');
     if (!await outDir.exists()) {
@@ -393,7 +455,7 @@ class MediaDownloader {
       await File(outPath).copy(fallbackPath);
       await _cleanupQuietly(<String>[outPath]);
     }
-    return Ok('已保存音频：$fallbackPath');
+    return Ok('已保存音频到应用目录（卸载后删除）：$fallbackPath');
   }
 
   Future<Result<String>> _downloadCoverOnly(
@@ -402,13 +464,14 @@ class MediaDownloader {
     String stamp,
     _ByteAggregator agg,
     CancelToken? cancelToken,
-    void Function(DownloadProgress progress)? onProgress,
-  ) async {
+    void Function(DownloadProgress progress)? onProgress, {
+    required bool saveToGallery,
+  }) async {
     final String? url = _normalizeUrl(coverUrl);
     if (url == null) {
       return const Err(AppError('没有可保存的封面'));
     }
-    if (!await _ensureGalleryAccess()) {
+    if (saveToGallery && !await _ensureGalleryAccess()) {
       return const Err(AppError('没有相册写入权限'));
     }
     try {
@@ -427,7 +490,26 @@ class MediaDownloader {
         },
       );
       agg.finishStreamKey('cover');
-      await Gal.putImage(coverPath, album: AppConstants.albumName);
+      if (cancelToken?.isCancelled ?? false) {
+        await _cleanupQuietly(<String>[coverPath]);
+        return const Err(AppError('已暂停'));
+      }
+      final String message;
+      if (saveToGallery) {
+        await Gal.putImage(coverPath, album: AppConstants.albumName);
+        message = '封面已保存到相册（ClipKeep）';
+      } else {
+        final String? saved = await _saveToDownloads(
+          coverPath,
+          'ClipKeep_cover_$stamp.jpg',
+          'image/jpeg',
+        );
+        if (saved == null) {
+          await _cleanupQuietly(<String>[coverPath]);
+          return const Err(AppError('保存封面到下载目录失败（可能缺少存储权限）'));
+        }
+        message = '封面已保存到 $saved';
+      }
       final int coverLen = await File(coverPath).length();
       onProgress?.call(
         DownloadProgress(
@@ -437,7 +519,7 @@ class MediaDownloader {
         ),
       );
       await _cleanupQuietly(<String>[coverPath]);
-      return Ok('封面已保存到相册（ClipKeep）');
+      return Ok(message);
     } on GalException {
       return const Err(AppError('保存到相册失败'));
     } catch (e) {
@@ -448,16 +530,14 @@ class MediaDownloader {
   Future<bool> _saveCover(
     String? coverUrl,
     String dirPath,
-    String stamp,
-  ) async {
+    String stamp, {
+    required bool saveToGallery,
+  }) async {
     final String? url = _normalizeUrl(coverUrl);
     if (url == null) {
       return false;
     }
     try {
-      if (!await _ensureGalleryAccess()) {
-        return false;
-      }
       final coverPath = '$dirPath/clipkeep_cover_$stamp.jpg';
       await _dio.download(
         url,
@@ -467,9 +547,22 @@ class MediaDownloader {
           receiveTimeout: const Duration(minutes: 5),
         ),
       );
-      await Gal.putImage(coverPath, album: AppConstants.albumName);
+      if (saveToGallery) {
+        if (!await _ensureGalleryAccess()) {
+          await _cleanupQuietly(<String>[coverPath]);
+          return false;
+        }
+        await Gal.putImage(coverPath, album: AppConstants.albumName);
+        await _cleanupQuietly(<String>[coverPath]);
+        return true;
+      }
+      final String? saved = await _saveToDownloads(
+        coverPath,
+        'ClipKeep_cover_$stamp.jpg',
+        'image/jpeg',
+      );
       await _cleanupQuietly(<String>[coverPath]);
-      return true;
+      return saved != null;
     } catch (_) {
       return false;
     }
@@ -480,6 +573,26 @@ class MediaDownloader {
       return true;
     }
     return Gal.requestAccess(toAlbum: true);
+  }
+
+  /// 复制成品到系统下载目录 `Download/ClipKeep`，返回相对路径；原生失败返回 null。
+  Future<String?> _saveToDownloads(
+    String path,
+    String displayName,
+    String mime,
+  ) async {
+    try {
+      return await _mediaStore.invokeMethod<String>(
+        'saveFile',
+        <String, String>{
+          'path': path,
+          'displayName': displayName,
+          'mime': mime,
+        },
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   String? _normalizeUrl(String? raw) {
@@ -515,16 +628,34 @@ class MediaDownloader {
     }
   }
 
-  Future<void> _moveFile(String from, String to) async {
-    final File target = File(to);
-    if (await target.exists()) {
-      await target.delete();
-    }
+  /// 删除某个任务在应用目录里的全部临时产物（源流、分片、合并结果、封面）。
+  /// 仅在用户删除记录时调用；失败重试需要保留这些文件以续传。
+  Future<void> cleanupTemp(String downloadId) async {
     try {
-      await File(from).rename(to);
+      final Directory dir =
+          await getExternalStorageDirectory() ??
+          await getApplicationDocumentsDirectory();
+      final List<String> paths = <String>[
+        '${dir.path}/clipkeep_v_$downloadId.m4s',
+        '${dir.path}/clipkeep_a_$downloadId.m4s',
+        '${dir.path}/clipkeep_av_$downloadId.m4s',
+        '${dir.path}/clipkeep_audio_$downloadId.m4a',
+        '${dir.path}/clipkeep_cover_$downloadId.jpg',
+        '${dir.path}/clipkeep_$downloadId.mp4',
+      ];
+      for (final String name in <String>[
+        'clipkeep_v_$downloadId.m4s',
+        'clipkeep_a_$downloadId.m4s',
+        'clipkeep_av_$downloadId.m4s',
+        'clipkeep_audio_$downloadId.m4a',
+      ]) {
+        for (int i = 0; i < 64; i++) {
+          paths.add('${dir.path}/$name.part$i');
+        }
+      }
+      await _cleanupQuietly(paths);
     } catch (_) {
-      await File(from).copy(to);
-      await _cleanupQuietly(<String>[from]);
+      // 临时目录不可用时忽略。
     }
   }
 
@@ -589,7 +720,7 @@ class MediaDownloader {
     // 已完成（例如另一个流失败后重试）直接跳过，避免重复下载。
     final int destExisting = await _existingLength(destination);
     if (total != null && destExisting >= total) {
-      agg.beginStream(key, total);
+      agg.beginStream(key, total, initial: total);
       agg.updateStream(key, total, total);
       onProgress?.call(agg.snapshot());
       return;
@@ -620,9 +751,11 @@ class MediaDownloader {
     }
 
     final int existing = await _existingLength(destination);
-    agg.beginStream(key, total ?? 0);
-    if (existing > 0) {
-      agg.updateStream(key, existing, total ?? 0);
+    // 服务端不支持 Range 时会从头覆盖写，已存在字节不能算作本次进度。
+    final int resumeFrom = probe.supported ? existing : 0;
+    agg.beginStream(key, total ?? 0, initial: resumeFrom);
+    if (resumeFrom > 0) {
+      agg.updateStream(key, resumeFrom, total ?? 0);
       onProgress?.call(agg.snapshot());
     }
     final int? to = probe.supported ? (total != null ? total - 1 : null) : null;
@@ -630,7 +763,7 @@ class MediaDownloader {
       url,
       stream.headers,
       destination,
-      existing,
+      resumeFrom,
       to,
       cancelToken,
       (int received) {
@@ -680,7 +813,7 @@ class MediaDownloader {
     for (final int h in haveLens) {
       known += h;
     }
-    agg.beginStream(key, total);
+    agg.beginStream(key, total, initial: known);
     agg.updateStream(key, known, total);
     onProgress?.call(agg.snapshot());
 
@@ -800,22 +933,30 @@ class MediaDownloader {
     Map<String, String> headers,
     CancelToken? cancelToken,
   ) async {
+    Response<ResponseBody>? res;
+    StreamSubscription<List<int>>? subscription;
     try {
-      final Response<List<int>> res = await _dio.get<List<int>>(
+      // 用 stream 而不是 bytes：若服务端忽略 Range 直接回 200，bytes 会把整个文件读进内存。
+      res = await _dio.get<ResponseBody>(
         url,
         cancelToken: cancelToken,
         options: Options(
-          responseType: ResponseType.bytes,
+          responseType: ResponseType.stream,
           headers: <String, String>{
             ..._withCookie(headers, url: url),
-            'Range': 'bytes=0-1',
+            'Range': 'bytes=0-0',
           },
           validateStatus: (int? status) => status != null && status < 500,
           receiveTimeout: const Duration(seconds: 20),
         ),
       );
+      subscription = res.data?.stream.listen(null);
       final String? contentRange = res.headers.value('content-range');
-      if (res.statusCode == 206 && contentRange != null) {
+      if (res.statusCode == 206) {
+        if (contentRange == null) {
+          // 206 却没有 Content-Range：总大小不可信，退回单连接重下。
+          return (supported: false, total: null);
+        }
         final String totalPart = contentRange.split('/').last;
         return (supported: true, total: int.tryParse(totalPart));
       }
@@ -828,6 +969,8 @@ class MediaDownloader {
       );
     } catch (_) {
       return (supported: false, total: null);
+    } finally {
+      await subscription?.cancel();
     }
   }
 }
@@ -836,13 +979,17 @@ class MediaDownloader {
 class _ByteAggregator {
   double scale = 1.0;
   int _finished = 0;
+  int _finishedBase = 0;
   final Map<String, int> _recv = <String, int>{};
   final Map<String, int> _tot = <String, int>{};
+  final Map<String, int> _base = <String, int>{};
   final DateTime _start = DateTime.now();
 
-  void beginStream(String key, int total) {
-    _recv[key] = 0;
+  /// [initial] 是续传前已存在的字节，不计入本次速度，避免恢复时出现虚假高速。
+  void beginStream(String key, int total, {int initial = 0}) {
+    _recv[key] = initial;
     _tot[key] = total > 0 ? total : 0;
+    _base[key] = initial;
   }
 
   void updateStream(String key, int received, int total) {
@@ -856,8 +1003,10 @@ class _ByteAggregator {
     final int total = _tot[key] ?? 0;
     final int received = _recv[key] ?? 0;
     _finished += total > 0 ? total : received;
+    _finishedBase += _base[key] ?? 0;
     _recv.remove(key);
     _tot.remove(key);
+    _base.remove(key);
   }
 
   DownloadProgress snapshot({double? fallback}) {
@@ -869,9 +1018,16 @@ class _ByteAggregator {
     for (final int value in _tot.values) {
       total += value;
     }
+    int started = _finishedBase;
+    for (final int value in _base.values) {
+      started += value;
+    }
     final double elapsed =
         DateTime.now().difference(_start).inMilliseconds / 1000.0;
-    final double speed = elapsed > 0 ? received / elapsed : 0;
+    final int transferred = received - started;
+    final double speed = elapsed > 0 && transferred > 0
+        ? transferred / elapsed
+        : 0;
     double fraction;
     if (total > 0) {
       fraction = (received / total) * scale;

@@ -21,11 +21,13 @@ class DownloaderStore extends ChangeNotifier {
   final String? Function()? cookieProvider;
   final List<DownloadTask> _tasks = <DownloadTask>[];
   final Map<String, CancelToken> _tokens = <String, CancelToken>{};
+  final Map<String, Future<void>> _running = <String, Future<void>>{};
 
   bool _parsing = false;
   String? _error;
   ParsedSource? _source;
   String? _savedMessage;
+  int _parseSeq = 0;
 
   bool get parsing => _parsing;
   String? get error => _error;
@@ -44,6 +46,7 @@ class DownloaderStore extends ChangeNotifier {
   }
 
   Future<void> parse(String input) async {
+    final int seq = ++_parseSeq;
     _lastInput = input;
     _parsing = true;
     _error = null;
@@ -53,6 +56,10 @@ class DownloaderStore extends ChangeNotifier {
       input,
       cookie: cookieProvider?.call(),
     );
+    // 期间又发起了新的解析：丢弃这次的结果，避免旧请求覆盖新内容。
+    if (seq != _parseSeq) {
+      return;
+    }
     if (result is Ok<ParsedSource>) {
       _source = result.value;
     } else if (result is Err<ParsedSource>) {
@@ -119,8 +126,23 @@ class DownloaderStore extends ChangeNotifier {
     );
     _tasks.insert(0, task);
     notifyListeners();
-    unawaited(_runTask(task));
+    _startRun(task);
     return task;
+  }
+
+  /// 启动一次下载运行。同一任务在同一时刻只允许一个运行，避免两次运行
+  /// 同时向同一个临时文件追加数据、互相覆盖状态。
+  void _startRun(DownloadTask task) {
+    if (_running.containsKey(task.id)) {
+      return;
+    }
+    final Future<void> run = _runTask(task);
+    _running[task.id] = run;
+    run.whenComplete(() {
+      if (identical(_running[task.id], run)) {
+        _running.remove(task.id);
+      }
+    }).ignore();
   }
 
   Future<void> _runTask(DownloadTask task) async {
@@ -133,12 +155,12 @@ class DownloaderStore extends ChangeNotifier {
     task.status = DownloadStatus.downloading;
     task.error = null;
     task.savedMessage = null;
-    task.progress = 0;
-    task.receivedBytes = 0;
-    task.totalBytes = 0;
+    task.phase = null;
     task.speedBytesPerSec = 0;
     notifyListeners();
 
+    // 同一次运行内进度只增不减：音频流稍晚注册时总字节会变大，避免进度条回退。
+    double runProgress = task.progress;
     final Result<String> result = await _api.download(
       part,
       videoQuality: task.videoQuality,
@@ -150,7 +172,14 @@ class DownloaderStore extends ChangeNotifier {
       downloadId: task.id,
       cancelToken: token,
       onProgress: (DownloadProgress p) {
-        task.progress = p.fraction;
+        if (!identical(_tokens[task.id], token) ||
+            task.status != DownloadStatus.downloading) {
+          return;
+        }
+        if (p.fraction > runProgress) {
+          runProgress = p.fraction;
+        }
+        task.progress = runProgress;
         task.receivedBytes = p.receivedBytes;
         task.totalBytes = p.totalBytes;
         task.speedBytesPerSec = p.speedBytesPerSec;
@@ -158,7 +187,13 @@ class DownloaderStore extends ChangeNotifier {
         notifyListeners();
       },
     );
-    _tokens.remove(task.id);
+    if (identical(_tokens[task.id], token)) {
+      _tokens.remove(task.id);
+    }
+    // 任务已被删除：不再写回任何状态。
+    if (!_tasks.contains(task)) {
+      return;
+    }
     if (task.status == DownloadStatus.paused) {
       notifyListeners();
       return;
@@ -168,7 +203,10 @@ class DownloaderStore extends ChangeNotifier {
       task.progress = 1;
       task.phase = null;
       task.savedMessage = result.value;
-      task.thumbnailPath = await _api.cacheCover(task.coverUrl, task.id);
+      final String? thumb = await _api.cacheCover(task.coverUrl, task.id);
+      if (_tasks.contains(task)) {
+        task.thumbnailPath = thumb;
+      }
       unawaited(_persistCompleted());
     } else if (result is Err<String>) {
       task.phase = null;
@@ -187,15 +225,31 @@ class DownloaderStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  void resumeTask(DownloadTask task) {
+  /// 继续暂停/失败的任务。先等上一次运行彻底结束（Dio 取消是异步的），
+  /// 再启动新运行，避免两个运行同时写同一个临时文件。
+  Future<void> resumeTask(DownloadTask task) async {
     if (task.status == DownloadStatus.downloading || task.part == null) {
       return;
     }
-    unawaited(_runTask(task));
+    final Future<void>? previous = _running[task.id];
+    if (previous != null) {
+      await previous;
+    }
+    if (!_tasks.contains(task)) {
+      return;
+    }
+    if (task.status != DownloadStatus.paused &&
+        task.status != DownloadStatus.failed) {
+      return;
+    }
+    _startRun(task);
   }
 
   /// 重试失败任务：先用最新地址刷新流（解决签名 URL 过期 403），再继续下载。
   Future<void> retryTask(DownloadTask task) async {
+    if (_running.containsKey(task.id)) {
+      return;
+    }
     final MediaPart? part = task.part;
     if (part != null) {
       final Result<List<MediaStream>> refreshed = await _api.refreshStreams(
@@ -211,13 +265,24 @@ class DownloaderStore extends ChangeNotifier {
         );
       }
     }
-    resumeTask(task);
+    // 重试可能因签名/分片失效而从零开始，先清掉旧进度，避免停在虚假的百分比。
+    task.progress = 0;
+    await resumeTask(task);
   }
 
   void removeTask(DownloadTask task) {
     _tokens[task.id]?.cancel('removed');
     _tokens.remove(task.id);
     unawaited(_deleteThumbQuietly(task.thumbnailPath));
+    // 删除记录时清掉临时文件；失败任务的文件在删除前保留，供重试续传。
+    // 等当前运行收尾后再删，否则可能边写边删、留下残留分片。
+    final Future<void>? previous = _running[task.id];
+    if (previous == null) {
+      unawaited(_api.cleanup(task.id));
+    } else {
+      // ignore()：即使上一次运行以异常结束，清理仍要执行且不能产生未捕获错误。
+      previous.whenComplete(() => _api.cleanup(task.id)).ignore();
+    }
     _tasks.remove(task);
     unawaited(_persistCompleted());
     notifyListeners();

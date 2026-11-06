@@ -50,7 +50,8 @@ class DownloaderApi {
             AppError('未配置抖音解析服务：请到「设置 → 解析服务（抖音）」填写服务器地址与 API Key'),
           );
         }
-        return await DtkClient(config).parse(input);
+        // 传归一化结果：裸 aweme_id 会被转成抖音视频页，分享文案则提取出 URL。
+        return await DtkClient(config).parse(normalized);
       }
       final ParsedSource source = await _resolver.resolve(
         normalized,
@@ -132,7 +133,7 @@ class DownloaderApi {
   static final RegExp _trailingPunctuation = RegExp(r'[),.;!?，。；！？、）】》」』]+$');
 
   /// 把用户输入归一化为可解析形式：完整链接、含标题的分享文本、b23 短链都可。
-  /// 视频链接优先提取 BV 号；其它类型保留（解析后的）完整链接。
+  /// 先判平台再抽 BV：抖音长链接的随机串可能恰好匹配 BV 号，反过来会误判。
   Future<String> _normalizeInput(String raw) async {
     final String text = raw.trim();
     final RegExpMatch? match = _urlPattern.firstMatch(text);
@@ -148,19 +149,24 @@ class DownloaderApi {
       }
       return text;
     }
-    String url = match.group(0)!.replaceAll(_trailingPunctuation, '');
-    final bool isShort = url.contains('b23.tv') || url.contains('bili2233.cn');
+    final String url = match.group(0)!.replaceAll(_trailingPunctuation, '');
+    if (_isDtkLink(url)) {
+      return url;
+    }
+    String resolved = url;
+    final bool isShort =
+        resolved.contains('b23.tv') || resolved.contains('bili2233.cn');
     if (isShort) {
-      final String? resolved = await _resolveShortLink(url);
-      if (resolved != null) {
-        url = resolved;
+      final String? finalUrl = await _resolveShortLink(resolved);
+      if (finalUrl != null) {
+        resolved = finalUrl;
       }
     }
-    final RegExpMatch? bv = _bvPattern.firstMatch(url);
+    final RegExpMatch? bv = _bvPattern.firstMatch(resolved);
     if (bv != null) {
       return bv.group(0)!;
     }
-    return url;
+    return resolved;
   }
 
   /// 跟随 b23.tv 重定向取最终地址；失败返回 null（回退原短链）。
@@ -181,6 +187,9 @@ class DownloaderApi {
       return null;
     }
   }
+
+  /// 删除某个任务的临时下载产物（源流/分片/合并结果）。
+  Future<void> cleanup(String downloadId) => _media.cleanupTemp(downloadId);
 
   Future<Result<String>> download(
     MediaPart part, {
