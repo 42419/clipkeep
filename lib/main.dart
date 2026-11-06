@@ -6,6 +6,18 @@ import 'package:material_ui/material_ui.dart'
 import 'routes/app_router.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  // 双保险：即使 M3EMaterialApp 的 drawUnderSystemBars 被主题重建覆盖，
+  // 也确保窗口是 edge-to-edge、系统栏透明。
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      systemNavigationBarColor: Colors.transparent,
+      systemStatusBarContrastEnforced: false,
+      systemNavigationBarContrastEnforced: false,
+    ),
+  );
   // 把 GPL 全文注册进 Flutter 的许可证页，APK 内可随时查看。
   LicenseRegistry.addLicense(() async* {
     final String text = await rootBundle.loadString(

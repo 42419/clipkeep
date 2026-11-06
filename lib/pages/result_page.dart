@@ -239,11 +239,11 @@ class _ResultPageState extends State<ResultPage> {
     final double cardHeight = portrait ? 360 : 208;
     final String? url = _normalizeUrl(source.coverUrl);
 
-    Widget coverImage({bool softEdges = true}) {
+    Widget coverImage() {
       if (url == null) {
         return _decorativeCover(scheme);
       }
-      final Widget image = Image.network(
+      return Image.network(
         url,
         headers: imageHeadersFor(url),
         fit: BoxFit.cover,
@@ -260,8 +260,6 @@ class _ResultPageState extends State<ResultPage> {
           StackTrace? stackTrace,
         ) => _decorativeCover(scheme),
       );
-      // 封面上下边缘做渐进模糊，和 edge-to-edge 的柔和过渡一致。
-      return softEdges ? _softEdges(image) : image;
     }
 
     final Widget layer = portrait
@@ -272,7 +270,7 @@ class _ResultPageState extends State<ResultPage> {
               Positioned.fill(
                 child: ImageFiltered(
                   imageFilter: ui.ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-                  child: coverImage(softEdges: false),
+                  child: coverImage(),
                 ),
               ),
               Positioned.fill(
@@ -285,7 +283,9 @@ class _ResultPageState extends State<ResultPage> {
                     aspectRatio: source.aspectRatio,
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-                      child: coverImage(),
+                      child: url == null
+                          ? coverImage()
+                          : _softEdgesAll(coverImage()),
                     ),
                   ),
                 ),
@@ -412,30 +412,26 @@ class _ResultPageState extends State<ResultPage> {
     );
   }
 
-  /// 封面上下边缘的渐进模糊，弱化图片与卡片的硬边，配合 edge-to-edge。
-  Widget _softEdges(Widget child) {
+  /// 竖屏封面四条边的渐进模糊，弱化图片与卡片的硬边。
+  Widget _softEdgesAll(Widget child) {
     return SoftEdgeBlur(
       edges: <EdgeBlur>[
-        EdgeBlur(
-          type: EdgeType.topEdge,
-          size: 30,
-          sigma: 10,
-          controlPoints: <ControlPoint>[
-            ControlPoint(position: 0, type: ControlPointType.visible),
-            ControlPoint(position: 0.55, type: ControlPointType.visible),
-            ControlPoint(position: 1, type: ControlPointType.transparent),
-          ],
-        ),
-        EdgeBlur(
-          type: EdgeType.bottomEdge,
-          size: 30,
-          sigma: 10,
-          controlPoints: <ControlPoint>[
-            ControlPoint(position: 0, type: ControlPointType.visible),
-            ControlPoint(position: 0.55, type: ControlPointType.visible),
-            ControlPoint(position: 1, type: ControlPointType.transparent),
-          ],
-        ),
+        for (final EdgeType type in <EdgeType>[
+          EdgeType.topEdge,
+          EdgeType.bottomEdge,
+          EdgeType.leftEdge,
+          EdgeType.rightEdge,
+        ])
+          EdgeBlur(
+            type: type,
+            size: 20,
+            sigma: 6,
+            controlPoints: <ControlPoint>[
+              ControlPoint(position: 0, type: ControlPointType.visible),
+              ControlPoint(position: 0.55, type: ControlPointType.visible),
+              ControlPoint(position: 1, type: ControlPointType.transparent),
+            ],
+          ),
       ],
       child: child,
     );
