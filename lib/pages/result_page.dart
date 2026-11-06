@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:material_ui/material_ui.dart'
     hide CornerRounding, RoundedPolygon;
 import 'package:provider/provider.dart';
+import 'package:soft_edge_blur/soft_edge_blur.dart';
 
 import '../stores/downloader_store.dart';
 import '../utils/image_headers.dart';
@@ -238,11 +239,11 @@ class _ResultPageState extends State<ResultPage> {
     final double cardHeight = portrait ? 360 : 208;
     final String? url = _normalizeUrl(source.coverUrl);
 
-    Widget coverImage() {
+    Widget coverImage({bool softEdges = true}) {
       if (url == null) {
         return _decorativeCover(scheme);
       }
-      return Image.network(
+      final Widget image = Image.network(
         url,
         headers: imageHeadersFor(url),
         fit: BoxFit.cover,
@@ -259,6 +260,8 @@ class _ResultPageState extends State<ResultPage> {
           StackTrace? stackTrace,
         ) => _decorativeCover(scheme),
       );
+      // 封面上下边缘做渐进模糊，和 edge-to-edge 的柔和过渡一致。
+      return softEdges ? _softEdges(image) : image;
     }
 
     final Widget layer = portrait
@@ -269,7 +272,7 @@ class _ResultPageState extends State<ResultPage> {
               Positioned.fill(
                 child: ImageFiltered(
                   imageFilter: ui.ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-                  child: coverImage(),
+                  child: coverImage(softEdges: false),
                 ),
               ),
               Positioned.fill(
@@ -406,6 +409,35 @@ class _ResultPageState extends State<ResultPage> {
           ),
         ],
       ),
+    );
+  }
+
+  /// 封面上下边缘的渐进模糊，弱化图片与卡片的硬边，配合 edge-to-edge。
+  Widget _softEdges(Widget child) {
+    return SoftEdgeBlur(
+      edges: <EdgeBlur>[
+        EdgeBlur(
+          type: EdgeType.topEdge,
+          size: 30,
+          sigma: 10,
+          controlPoints: <ControlPoint>[
+            ControlPoint(position: 0, type: ControlPointType.visible),
+            ControlPoint(position: 0.55, type: ControlPointType.visible),
+            ControlPoint(position: 1, type: ControlPointType.transparent),
+          ],
+        ),
+        EdgeBlur(
+          type: EdgeType.bottomEdge,
+          size: 30,
+          sigma: 10,
+          controlPoints: <ControlPoint>[
+            ControlPoint(position: 0, type: ControlPointType.visible),
+            ControlPoint(position: 0.55, type: ControlPointType.visible),
+            ControlPoint(position: 1, type: ControlPointType.transparent),
+          ],
+        ),
+      ],
+      child: child,
     );
   }
 
@@ -791,7 +823,13 @@ class _ResultPageState extends State<ResultPage> {
         : '开始下载';
     return Container(
       color: scheme.surface,
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+      // edge-to-edge 下 MediaQuery.padding.bottom 被清空，用 viewPadding 补回手势区。
+      padding: EdgeInsets.fromLTRB(
+        16,
+        12,
+        16,
+        28 + M3ESafeArea.bottomOf(context),
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
