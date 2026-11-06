@@ -99,6 +99,7 @@ class _HomeViewState extends State<HomeView> {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final controller = context.watch<DownloaderStore>();
+    final AuthStore auth = context.watch<AuthStore>();
     return Scaffold(
       backgroundColor: scheme.surface,
       body: SafeArea(
@@ -114,8 +115,11 @@ class _HomeViewState extends State<HomeView> {
             const SizedBox(height: AppTheme.gap),
             _buildPasteCard(theme, scheme, controller),
             const SizedBox(height: AppTheme.gap),
-            _buildLoginCard(theme, scheme),
-            const SizedBox(height: 24),
+            // 已登录时首页不再占一张卡片；账号状态与退出入口在设置页。
+            if (!auth.isLoggedIn) ...<Widget>[
+              _buildLoginCard(theme, scheme),
+              const SizedBox(height: 24),
+            ],
             _buildRecent(theme, scheme, controller),
           ],
         ),
@@ -275,76 +279,6 @@ class _HomeViewState extends State<HomeView> {
   }
 
   Widget _buildLoginCard(ThemeData theme, ColorScheme scheme) {
-    final AuthStore auth = context.watch<AuthStore>();
-    if (auth.isLoggedIn) {
-      final String uname = (auth.uname != null && auth.uname!.isNotEmpty)
-          ? auth.uname!
-          : '已登录';
-      final String face = auth.face ?? '';
-      return Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: scheme.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-        ),
-        child: Row(
-          children: <Widget>[
-            ClipOval(
-              child: SizedBox(
-                width: 48,
-                height: 48,
-                child: face.isNotEmpty
-                    ? Image.network(
-                        face,
-                        fit: BoxFit.cover,
-                        headers: imageHeadersFor(face),
-                        errorBuilder: (
-                          BuildContext context,
-                          Object error,
-                          StackTrace? stackTrace,
-                        ) => _biliAvatar(),
-                      )
-                    : _biliAvatar(),
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    '哔哩哔哩 · $uname',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    auth.vip ? '大会员 · 高清画质已解锁' : '已登录 · 可解析高清画质',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            M3EButton(
-              onPressed: () {
-                unawaited(context.read<AuthStore>().logout());
-              },
-              tooltip: '退出登录',
-              label: const Text('退出'),
-              size: M3EButtonSize.sm,
-              style: M3EButtonStyle.tonal,
-            ),
-          ],
-        ),
-      );
-    }
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
