@@ -30,6 +30,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
 
   String? _lastClipboard;
   bool _sheetShowing = false;
+  bool _openingResult = false;
   bool _prefsLoaded = false;
   bool _autoDetect = true;
 
@@ -147,14 +148,22 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
     }
   }
 
-  void _parseFromClipboard(String text) {
-    final DownloaderStore store = context.read<DownloaderStore>();
-    unawaited(store.parse(text));
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (BuildContext context) => const ResultPage(),
-      ),
-    );
+  Future<void> _parseFromClipboard(String text) async {
+    if (_openingResult) {
+      return;
+    }
+    _openingResult = true;
+    try {
+      final DownloaderStore store = context.read<DownloaderStore>();
+      unawaited(store.parse(text));
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (BuildContext context) => const ResultPage(),
+        ),
+      );
+    } finally {
+      _openingResult = false;
+    }
   }
 
   @override

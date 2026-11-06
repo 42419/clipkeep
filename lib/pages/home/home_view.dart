@@ -29,6 +29,7 @@ class HomeView extends StatefulWidget {
 class _HomeViewState extends State<HomeView> {
   final TextEditingController _input = TextEditingController();
   int _mode = 0; // 0 自动识别 / 1 抖音 / 2 哔哩哔哩
+  bool _openingResult = false;
 
   @override
   void dispose() {
@@ -45,6 +46,10 @@ class _HomeViewState extends State<HomeView> {
   }
 
   Future<void> _parse() async {
+    // 结果页是 push 出来的：连点会在解析完成前叠出多个页面，共用同一份解析状态。
+    if (_openingResult) {
+      return;
+    }
     FocusScope.of(context).unfocus();
     final text = _input.text.trim();
     final messenger = ScaffoldMessenger.of(context);
@@ -76,12 +81,17 @@ class _HomeViewState extends State<HomeView> {
     }
     // 立即跳转，解析在网络请求进行中完成，结果页展示骨架屏。
     final store = context.read<DownloaderStore>();
-    unawaited(store.parse(text));
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (BuildContext context) => const ResultPage(),
-      ),
-    );
+    _openingResult = true;
+    try {
+      unawaited(store.parse(text));
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (BuildContext context) => const ResultPage(),
+        ),
+      );
+    } finally {
+      _openingResult = false;
+    }
   }
 
   @override

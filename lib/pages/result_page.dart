@@ -517,12 +517,28 @@ class _ResultPageState extends State<ResultPage> {
     if (part == null) {
       return const <MediaStream>[];
     }
-    final List<MediaStream> list = part.streams
-        .where(
-          (MediaStream s) =>
-              s.isVideo && s.quality > 0 && s.primaryUrl.isNotEmpty,
-        )
-        .toList();
+    // 同一画质会有 avc/hevc/av1 多条流，抖音还可能有同分辨率多码率：
+    // 按钮按显示标签去重，优先 avc，其次码率/大小更大的一条，
+    // 保证「看到哪一档就下哪一档」，不出现重复按钮。
+    final Map<String, MediaStream> byLabel = <String, MediaStream>{};
+    int weight(MediaStream s) => s.bitrate ?? s.sizeBytes ?? 0;
+    for (final MediaStream s in part.streams) {
+      if (!s.isVideo || s.quality <= 0 || s.primaryUrl.isEmpty) {
+        continue;
+      }
+      final String label = s.displayLabel;
+      final MediaStream? existing = byLabel[label];
+      if (existing == null) {
+        byLabel[label] = s;
+        continue;
+      }
+      if (existing.codec != 'avc' && s.codec == 'avc') {
+        byLabel[label] = s;
+      } else if (existing.codec == s.codec && weight(s) > weight(existing)) {
+        byLabel[label] = s;
+      }
+    }
+    final List<MediaStream> list = byLabel.values.toList();
     list.sort((MediaStream a, MediaStream b) => b.quality.compareTo(a.quality));
     return list;
   }
@@ -865,7 +881,7 @@ class _ResultPageState extends State<ResultPage> {
       coverOnly: _coverOnly,
       saveCover: _videoWithCover,
       coverUrl: store.source?.coverUrl,
-      sourceUrl: part.id,
+      sourceUrl: store.source?.sourceUrl ?? part.id,
     );
     setState(() => _activeTaskId = task.id);
     messenger.clearSnackBars();

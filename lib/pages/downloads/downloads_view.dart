@@ -11,6 +11,7 @@ import '../../theme/app_theme.dart';
 import '../../utils/format.dart';
 import '../../utils/image_headers.dart';
 import '../../viewmodels/download_task.dart';
+import '../login/bilibili_login_page.dart';
 import '../result_page.dart';
 
 /// 下载页：真实下载任务（进行中 / 已完成）。
@@ -25,6 +26,7 @@ class _DownloadsViewState extends State<DownloadsView> {
   int _tab = 0;
   final ScrollController _scroll = ScrollController();
   bool _showClearFab = true;
+  bool _openingResult = false;
   double _lastOffset = 0;
 
   @override
@@ -226,7 +228,7 @@ class _DownloadsViewState extends State<DownloadsView> {
   ) async {
     final bool ok = await _confirmAction(
       title: '删除这条记录？',
-      content: '只删除下载记录，不会删除已保存到相册或下载目录的文件。',
+      content: '只删除下载记录与临时文件，不会删除已保存到相册或下载目录的文件。',
       confirmLabel: '删除',
     );
     if (ok) {
@@ -234,7 +236,24 @@ class _DownloadsViewState extends State<DownloadsView> {
     }
   }
 
-  void _reparseTask(DownloaderStore store, DownloadTask task) {
+  Future<void> _openLogin() async {
+    final bool? ok = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (BuildContext context) => const BilibiliLoginPage(),
+      ),
+    );
+    if (!mounted || ok != true) {
+      return;
+    }
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    messenger.clearSnackBars();
+    messenger.showSnackBar(const SnackBar(content: Text('登录成功，可重试下载')));
+  }
+
+  Future<void> _reparseTask(DownloaderStore store, DownloadTask task) async {
+    if (_openingResult) {
+      return;
+    }
     final String? input = _taskInput(task);
     if (input == null) {
       final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
@@ -242,12 +261,17 @@ class _DownloadsViewState extends State<DownloadsView> {
       messenger.showSnackBar(const SnackBar(content: Text('无法重新解析该记录')));
       return;
     }
-    unawaited(store.parse(input));
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (BuildContext context) => const ResultPage(),
-      ),
-    );
+    _openingResult = true;
+    try {
+      unawaited(store.parse(input));
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (BuildContext context) => const ResultPage(),
+        ),
+      );
+    } finally {
+      _openingResult = false;
+    }
   }
 
   String? _taskInput(DownloadTask task) {
@@ -255,7 +279,15 @@ class _DownloadsViewState extends State<DownloadsView> {
     if (saved != null && saved.startsWith('http')) {
       return saved;
     }
-    final String? id = task.part?.id;
+    // 兼容旧记录：sourceUrl 曾写成「BV号-cid」，重启后 part 已不在内存里。
+    final String? fromSaved = _fromPartId(saved);
+    if (fromSaved != null) {
+      return fromSaved;
+    }
+    return _fromPartId(task.part?.id);
+  }
+
+  String? _fromPartId(String? id) {
     if (id == null) {
       return null;
     }
@@ -264,7 +296,10 @@ class _DownloadsViewState extends State<DownloadsView> {
       return null;
     }
     final String head = id.substring(0, idx);
-    return head.startsWith('BV') ? head : 'av$head';
+    if (head.startsWith('BV')) {
+      return head;
+    }
+    return int.tryParse(head) == null ? null : 'av$head';
   }
 
   Widget _buildEmpty(ThemeData theme, ColorScheme scheme) {
@@ -337,8 +372,13 @@ class _DownloadsViewState extends State<DownloadsView> {
                 icon: Icon(paused ? Icons.play_arrow : Icons.pause),
                 variant: M3EIconButtonVariant.tonal,
                 tooltip: paused ? '继续' : '暂停',
-                onPressed: () =>
-                    paused ? store.resumeTask(task) : store.pauseTask(task),
+                onPressed: () {
+                  if (paused) {
+                    unawaited(store.resumeTask(task));
+                  } else {
+                    store.pauseTask(task);
+                  }
+                },
               ),
             ],
           ),
@@ -376,7 +416,11 @@ class _DownloadsViewState extends State<DownloadsView> {
     DownloadTask task,
   ) {
     final String error = task.error ?? '下载失败';
-    final bool needLogin = error.contains('登录') || error.contains('-101');
+    final bool needLogin =
+        error.contains('登录') ||
+        error.contains('-101') ||
+        error.contains('HTTP 401') ||
+        error.contains('SESSDATA');
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -421,27 +465,21 @@ class _DownloadsViewState extends State<DownloadsView> {
             mainAxisAlignment: MainAxisAlignment.end,
             children: <Widget>[
               M3EButton.text(
-                onPressed: () => store.retryTask(task),
+                onPressed: () => unawaited(store.retryTask(task)),
                 size: M3EButtonSize.sm,
                 tooltip: '重试',
                 child: const Text('重试'),
               ),
-              const SizedBox(width: 8),
-              M3EButton.filled(
-                onPressed: () {
-                  final ScaffoldMessengerState messenger = ScaffoldMessenger.of(
-                    context,
-                  );
-                  messenger.clearSnackBars();
-                  messenger.showSnackBar(
-                    const SnackBar(content: Text('登录功能开发中')),
-                  );
-                },
-                size: M3EButtonSize.sm,
-                icon: const Icon(Icons.login),
-                label: Text(needLogin ? '去登录' : '查看'),
-                tooltip: needLogin ? '去登录' : '查看',
-              ),
+              if (needLogin) ...<Widget>[
+                const SizedBox(width: 8),
+                M3EButton.filled(
+                  onPressed: _openLogin,
+                  size: M3EButtonSize.sm,
+                  icon: const Icon(Icons.login),
+                  label: const Text('去登录'),
+                  tooltip: '去登录',
+                ),
+              ],
             ],
           ),
         ],

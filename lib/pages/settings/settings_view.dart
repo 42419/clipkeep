@@ -54,7 +54,7 @@ class SettingsView extends StatelessWidget {
                     headline: '保存位置',
                     supportingText: settings.saveToGallery
                         ? '相册 · ${AppConstants.albumName}'
-                        : '下载 / ClipKeep',
+                        : '系统下载目录 · Download/ClipKeep',
                     trailing: Icon(
                       Icons.chevron_right,
                       color: scheme.onSurfaceVariant,
@@ -206,17 +206,27 @@ class SettingsView extends StatelessWidget {
   }
 
   String _biliSubtitle(AuthStore auth) {
+    final String? expires = _dateText(auth.cookieExpiresAt);
     if (!auth.isLoggedIn) {
+      if (auth.cookie != null) {
+        return expires == null ? '登录已过期 · 请重新登录' : '登录已过期（$expires）· 请重新登录';
+      }
       return '未登录 · 仅支持 480P 及以下';
     }
-    final DateTime? expires = auth.cookieExpiresAt;
     if (expires == null) {
       return '已登录 · 高清画质已解锁';
     }
-    final String y = expires.year.toString().padLeft(4, '0');
-    final String m = expires.month.toString().padLeft(2, '0');
-    final String d = expires.day.toString().padLeft(2, '0');
-    return '已登录 · Cookie 有效至 $y-$m-$d';
+    return '已登录 · Cookie 有效至 $expires';
+  }
+
+  String? _dateText(DateTime? value) {
+    if (value == null) {
+      return null;
+    }
+    final String y = value.year.toString().padLeft(4, '0');
+    final String m = value.month.toString().padLeft(2, '0');
+    final String d = value.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
   }
 
   Widget _biliAvatar(AuthStore auth) {
@@ -270,8 +280,8 @@ class SettingsView extends StatelessWidget {
               shape: BoxShape.circle,
             ),
             child: const Center(
-              child: FaIcon(
-                FontAwesomeIcons.tiktok,
+              child: Icon(
+                Icons.music_note_rounded,
                 color: Colors.white,
                 size: 24,
               ),
@@ -344,7 +354,7 @@ class SettingsView extends StatelessWidget {
       context,
       settings.saveToGallery
           ? '当前保存到相册（${AppConstants.albumName}）'
-          : '当前保存到「下载/ClipKeep」目录',
+          : '当前保存到系统下载目录（Download/ClipKeep）',
     );
   }
 
@@ -403,19 +413,35 @@ class SettingsView extends StatelessWidget {
           width: double.maxFinite,
           child: SingleChildScrollView(
             child: Text(
-              'ClipKeep 使用的开源组件与参考实现：\n\n'
+              'ClipKeep 以 GPL-3.0-or-later 发布，完整源码：\n'
+              'https://github.com/42419/clipkeep\n\n'
               '• Flutter / Dart（BSD-3-Clause）\n'
-              '• FFmpeg / FFmpegKit（LGPL / GPL，视所用变体而定）\n'
+              '• FFmpegKit for Flutter（插件 LGPL-3.0；所用 Full GPL 变体含 GPL 组件，应用整体按 GPL-3.0 分发）\n'
               '• PiliPlus（GPL-3.0-or-later）—— 哔哩哔哩接口解析参考实现\n'
-              '• bilibili-API-collect（CC-BY-NC 4.0）—— WBI 签名等接口文档\n'
+              '• bilibili-API-collect（CC-BY-NC 4.0）—— WBI 签名等接口文档，注意非商业限制\n'
+              '• Douyin_TikTok_Download_API（Apache-2.0）—— 抖音解析服务，仅通过 REST 调用\n'
               '• 其余 pub.dev 依赖遵循各自许可证\n\n'
-              '本应用与哔哩哔哩无隶属关系，仅供学习研究；请仅下载你有权保存的内容。',
+              '本应用与哔哩哔哩、抖音无隶属关系，仅供学习研究；请仅下载你有权保存的内容。',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
         ),
         actions: <Widget>[
           M3EButton.text(
+            onPressed: () {
+              Navigator.of(context).pop();
+              showLicensePage(
+                context: context,
+                applicationName: 'ClipKeep',
+                applicationVersion: '1.0.0',
+                applicationLegalese: 'GPL-3.0-or-later',
+              );
+            },
+            size: M3EButtonSize.md,
+            tooltip: '完整许可证',
+            child: const Text('完整许可证'),
+          ),
+          M3EButton.filled(
             onPressed: () => Navigator.of(context).pop(),
             size: M3EButtonSize.md,
             tooltip: '关闭',
