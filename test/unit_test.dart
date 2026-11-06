@@ -77,6 +77,14 @@ void main() {
             'bitrate': 1000000,
             'size_bytes': 1500000,
           },
+          // download_addr：720×720 带烧录水印，必须被丢弃。
+          <String, dynamic>{
+            'url': 'https://www.douyin.com/aweme/v1/play/?watermark=1',
+            'width': 720,
+            'height': 720,
+            'size_bytes': 5629498,
+            'watermark': true,
+          },
         ],
       },
       'web_url': 'https://www.douyin.com/video/7300000000000000000',
@@ -99,6 +107,12 @@ void main() {
       expect(source.parts.single.streams.length, 2);
       expect(source.parts.single.streams.first.displayLabel, '1080P');
       expect(source.parts.single.streams.first.sizeBytes, 3000000);
+      expect(
+        source.parts.single.streams.any(
+          (MediaStream s) => s.width == 720 && s.height == 720,
+        ),
+        isFalse,
+      );
     });
 
     test('图文/图集：不抛错、无 part', () {

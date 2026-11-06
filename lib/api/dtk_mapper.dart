@@ -91,6 +91,11 @@ List<MediaStream> _buildStreams(
     int? forcedSize,
     bool requireMeta = false,
   }) {
+    // 抖音的 download_addr（下载地址）带烧录水印，DTK 标为 watermark=true。
+    // 本项目只提供无水印下载，直接丢弃，避免它按尺寸/体积混进画质列表。
+    if (node['watermark'] == true) {
+      return;
+    }
     final List<String> urls = _playUrls(node);
     if (urls.isEmpty) {
       return;
