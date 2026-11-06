@@ -8,6 +8,9 @@ class ParsedSource {
     this.publishDate,
     this.ownerMid,
     this.authorAvatarUrl,
+    this.platform = 'bilibili',
+    this.videoWidth,
+    this.videoHeight,
   });
 
   final String title;
@@ -17,6 +20,49 @@ class ParsedSource {
   final int? ownerMid;
   final String? authorAvatarUrl;
   final List<MediaPart> parts;
+
+  /// 来源平台：bilibili / douyin / tiktok。
+  final String platform;
+
+  /// 视频像素宽高（用于横竖屏判断与封面比例），未知为 null。
+  final int? videoWidth;
+  final int? videoHeight;
+
+  /// 平台展示名。
+  String get platformLabel {
+    switch (platform) {
+      case 'douyin':
+        return '抖音';
+      case 'tiktok':
+        return 'TikTok';
+      default:
+        return '哔哩哔哩';
+    }
+  }
+
+  /// 竖屏：高 > 宽*1.05（对齐 douyinDL 脚本的判定）。
+  bool get isPortrait {
+    final int w = videoWidth ?? 0;
+    final int h = videoHeight ?? 0;
+    return w > 0 && h > 0 && h > w * 1.05;
+  }
+
+  /// 横屏：宽 > 高*1.05。
+  bool get isLandscape {
+    final int w = videoWidth ?? 0;
+    final int h = videoHeight ?? 0;
+    return w > 0 && h > 0 && w > h * 1.05;
+  }
+
+  /// 封面宽高比，未知时按 16:9。
+  double get aspectRatio {
+    final int w = videoWidth ?? 0;
+    final int h = videoHeight ?? 0;
+    if (w > 0 && h > 0) {
+      return w / h;
+    }
+    return 16 / 9;
+  }
 }
 
 class MediaPart {
@@ -81,6 +127,12 @@ class MediaStream {
     required this.urls,
     required this.headers,
     this.bandwidth,
+    this.width,
+    this.height,
+    this.fps,
+    this.bitrate,
+    this.sizeBytes,
+    this.resolutionLabel,
   });
 
   final String kind;
@@ -90,9 +142,45 @@ class MediaStream {
   final Map<String, String> headers;
   final int? bandwidth;
 
+  /// 像素尺寸、帧率、码率（bps）——抖音等平台可提供，B 站通常为空。
+  final int? width;
+  final int? height;
+  final int? fps;
+  final int? bitrate;
+
+  /// 精确文件大小（字节），来自 DTK 归一化流信息。
+  final int? sizeBytes;
+
+  /// 画质短标签，如 1080P；为空时回退 qualityLabel(quality)。
+  final String? resolutionLabel;
+
   bool get isVideo => kind == 'video';
 
   String get primaryUrl => urls.isEmpty ? '' : urls.first;
+
+  /// 显示用画质标签。
+  String get displayLabel => resolutionLabel ?? qualityLabel(quality);
+
+  /// 分辨率文本，如 1080×1920。
+  String get resolutionText =>
+      (width != null && height != null) ? '$width×$height' : '';
+
+  /// 帧率文本，如 30fps。
+  String get fpsText => fps != null ? '${fps}fps' : '';
+
+  /// 码率文本，如 2.4Mbps。
+  String get bitrateText =>
+      bitrate != null ? '${(bitrate! / 1000000).toStringAsFixed(1)}Mbps' : '';
+
+  /// 汇总详情：分辨率 · 帧率 · 码率（缺项省略）。
+  String get detailText {
+    final List<String> parts = <String>[
+      if (resolutionText.isNotEmpty) resolutionText,
+      if (fpsText.isNotEmpty) fpsText,
+      if (bitrateText.isNotEmpty) bitrateText,
+    ];
+    return parts.join(' · ');
+  }
 }
 
 /// B 站清晰度数值转可读文案。
@@ -111,5 +199,13 @@ String qualityLabel(int qn) {
     127: '8K',
   };
   final label = labels[qn];
-  return label ?? 'QN$qn';
+  if (label != null) {
+    return label;
+  }
+  // 抖音等平台用像素高（如 720/1080）作为质量值，直接渲染为 720P/1080P。
+  if (qn >= 240) {
+    return '$qn'
+        'P';
+  }
+  return 'QN$qn';
 }

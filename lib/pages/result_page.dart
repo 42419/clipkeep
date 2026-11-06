@@ -1,4 +1,7 @@
 import 'package:material_3_expressive/material_3_expressive.dart';
+
+import 'dart:ui' as ui;
+
 import 'package:material_ui/material_ui.dart'
     hide CornerRounding, RoundedPolygon;
 import 'package:provider/provider.dart';
@@ -209,7 +212,7 @@ class _ResultPageState extends State<ResultPage> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       children: <Widget>[
-        _buildCover(theme, scheme, source.coverUrl, part),
+        _buildCover(theme, scheme, source, part),
         const SizedBox(height: 16),
         Text(
           source.title,
@@ -230,43 +233,78 @@ class _ResultPageState extends State<ResultPage> {
   Widget _buildCover(
     ThemeData theme,
     ColorScheme scheme,
-    String? coverUrl,
+    ParsedSource source,
     MediaPart? part,
   ) {
-    const String platform = '哔哩哔哩';
-    final String? url = _normalizeUrl(coverUrl);
-    final Widget background = url == null
-        ? _decorativeCover(scheme)
-        : Image.network(
-            url,
-            headers: _imageHeaders,
-            fit: BoxFit.cover,
-            width: double.infinity,
-            height: 208,
-            loadingBuilder:
-                (
-                  BuildContext context,
-                  Widget child,
-                  ImageChunkEvent? progress,
-                ) {
-                  if (progress == null) {
-                    return child;
-                  }
-                  return _ShimmerBox(height: 208, radius: AppTheme.radiusXl);
-                },
-            errorBuilder: (
-              BuildContext context,
-              Object error,
-              StackTrace? stackTrace,
-            ) => _decorativeCover(scheme),
-          );
+    final String platform = source.platformLabel;
+    final bool portrait = source.isPortrait;
+    final double cardHeight = portrait ? 360 : 208;
+    final String? url = _normalizeUrl(source.coverUrl);
+
+    Widget coverImage() {
+      if (url == null) {
+        return _decorativeCover(scheme);
+      }
+      return Image.network(
+        url,
+        headers: _imageHeaders,
+        fit: BoxFit.cover,
+        loadingBuilder:
+            (BuildContext context, Widget child, ImageChunkEvent? progress) {
+              if (progress == null) {
+                return child;
+              }
+              return ColoredBox(color: scheme.surfaceContainerHighest);
+            },
+        errorBuilder: (
+          BuildContext context,
+          Object error,
+          StackTrace? stackTrace,
+        ) => _decorativeCover(scheme),
+      );
+    }
+
+    final Widget layer = portrait
+        ? Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              // 模糊背景铺满，避免竖屏封面两侧留白。
+              Positioned.fill(
+                child: ImageFiltered(
+                  imageFilter: ui.ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                  child: coverImage(),
+                ),
+              ),
+              Positioned.fill(
+                child: ColoredBox(color: scheme.scrim.withValues(alpha: 0.28)),
+              ),
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  child: AspectRatio(
+                    aspectRatio: source.aspectRatio,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                      child: coverImage(),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          )
+        : coverImage();
+
+    final Color platformDot = source.platform == 'douyin'
+        ? const Color(0xFF161823)
+        : const Color(0xFFF25C5C);
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(AppTheme.radiusXl),
       child: SizedBox(
-        height: 208,
+        height: cardHeight,
         child: Stack(
           children: <Widget>[
-            Positioned.fill(child: background),
+            Positioned.fill(child: layer),
             Center(
               child: Container(
                 width: 72,
@@ -296,8 +334,8 @@ class _ResultPageState extends State<ResultPage> {
                     Container(
                       width: 8,
                       height: 8,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFF25C5C),
+                      decoration: BoxDecoration(
+                        color: platformDot,
                         shape: BoxShape.circle,
                       ),
                     ),
@@ -342,7 +380,6 @@ class _ResultPageState extends State<ResultPage> {
 
   Widget _decorativeCover(ColorScheme scheme) {
     return Container(
-      height: 208,
       color: scheme.primaryContainer,
       child: Stack(
         children: <Widget>[
@@ -403,7 +440,8 @@ class _ResultPageState extends State<ResultPage> {
     final author = source.author.isEmpty ? '未知作者' : source.author;
     final name = author.startsWith('@') ? author : '@$author';
     final date = source.publishDate ?? '';
-    final meta = date.isEmpty ? '哔哩哔哩' : '$date · 哔哩哔哩';
+    final String platformName = source.platformLabel;
+    final meta = date.isEmpty ? platformName : '$date · $platformName';
     return Row(
       children: <Widget>[
         _buildAvatar(source, scheme),
@@ -478,35 +516,26 @@ class _ResultPageState extends State<ResultPage> {
     );
   }
 
-  List<int> _qualities(MediaPart? part) {
+  List<MediaStream> _videoStreams(MediaPart? part) {
     if (part == null) {
-      return const <int>[];
+      return const <MediaStream>[];
     }
-    final set = <int>{};
-    for (final stream in part.streams) {
-      // 只统计真实存在且有下载地址的视频画质（跳过 Best/unknown 与空地址）。
-      if (stream.isVideo &&
-          stream.quality > 0 &&
-          stream.primaryUrl.isNotEmpty) {
-        set.add(stream.quality);
-      }
-    }
-    return set.toList()..sort((int a, int b) => b.compareTo(a));
+    final List<MediaStream> list = part.streams
+        .where(
+          (MediaStream s) =>
+              s.isVideo && s.quality > 0 && s.primaryUrl.isNotEmpty,
+        )
+        .toList();
+    list.sort((MediaStream a, MediaStream b) => b.quality.compareTo(a.quality));
+    return list;
   }
 
-  MediaStream? _selectedStream(MediaPart? part, List<int> qualities) {
-    if (part == null || qualities.isEmpty) {
+  MediaStream? _selectedStream(MediaPart? part) {
+    final List<MediaStream> list = _videoStreams(part);
+    if (list.isEmpty) {
       return null;
     }
-    final int q = qualities[_qualityIndex.clamp(0, qualities.length - 1)];
-    final matches = part.streams
-        .where((MediaStream s) => s.isVideo && s.quality == q)
-        .toList();
-    if (matches.isEmpty) {
-      return null;
-    }
-    final avc = matches.where((MediaStream s) => s.codec == 'avc').toList();
-    return avc.isNotEmpty ? avc.first : matches.first;
+    return list[_qualityIndex.clamp(0, list.length - 1)];
   }
 
   /// 依据带宽与时长估算文件大小（约 xx MB）。
@@ -524,15 +553,10 @@ class _ResultPageState extends State<ResultPage> {
   }
 
   Widget _buildQuality(ThemeData theme, ColorScheme scheme, MediaPart? part) {
-    final qualities = _qualities(part);
-    final stream = _selectedStream(part, qualities);
-    final String size = _estimateSize(stream, part);
-    final pieces = <String>[
-      if (stream != null) qualityLabel(stream.quality),
-      if (stream != null) stream.codec.toUpperCase(),
-      if (size.isNotEmpty) size,
-    ];
-    final meta = pieces.isEmpty ? '暂无可用画质' : pieces.join(' · ');
+    final List<MediaStream> streams = _videoStreams(part);
+    final int selected = streams.isEmpty
+        ? 0
+        : _qualityIndex.clamp(0, streams.length - 1);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -543,7 +567,7 @@ class _ResultPageState extends State<ResultPage> {
           ),
         ),
         const SizedBox(height: 10),
-        if (qualities.isEmpty)
+        if (streams.isEmpty)
           Text('无', style: theme.textTheme.bodyMedium)
         else
           M3EButtonGroup(
@@ -552,7 +576,7 @@ class _ResultPageState extends State<ResultPage> {
             shape: M3EButtonShape.square,
             size: M3EButtonSize.md,
             overflow: M3EButtonGroupOverflow.menu,
-            selectedIndex: _qualityIndex.clamp(0, qualities.length - 1),
+            selectedIndex: selected,
             style: M3EButtonStyle.filled,
             density: M3EButtonGroupDensity.regular,
             neighborSquish: true,
@@ -564,26 +588,77 @@ class _ResultPageState extends State<ResultPage> {
               }
             },
             actions: <M3EButtonGroupAction>[
-              for (final int q in qualities)
+              for (final MediaStream s in streams)
                 M3EButtonGroupAction(
-                  // selectedIcon: const Icon(M3EIcons.check),
-                  label: Text(qualityLabel(q)),
-                  tooltip: qualityLabel(q),
+                  label: Text(s.displayLabel),
+                  tooltip: s.detailText.isEmpty
+                      ? s.displayLabel
+                      : '${s.displayLabel} · ${s.detailText}',
                 ),
             ],
           ),
         const SizedBox(height: 10),
-        Text(
-          meta,
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: scheme.onSurfaceVariant,
+        if (streams.isEmpty)
+          Text(
+            '暂无可用画质',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          )
+        else
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              for (int i = 0; i < streams.length; i++)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 5),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      SizedBox(
+                        width: 60,
+                        child: Text(
+                          streams[i].displayLabel,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: i == selected
+                                ? scheme.primary
+                                : scheme.onSurface,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(
+                          _streamDetailText(streams[i], part),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
           ),
-        ),
       ],
     );
   }
 
+  String _streamDetailText(MediaStream stream, MediaPart? part) {
+    final String size = stream.sizeBytes != null
+        ? '${(stream.sizeBytes! / 1024 / 1024).toStringAsFixed(1)} MB'
+        : _estimateSize(stream, part);
+    final List<String> parts = <String>[
+      if (stream.detailText.isNotEmpty) stream.detailText,
+      stream.codec.toUpperCase(),
+      if (size.isNotEmpty) size,
+    ];
+    return parts.join(' · ');
+  }
+
   Widget _buildOptions(ThemeData theme, ColorScheme scheme) {
+    final String platformName =
+        context.read<DownloaderStore>().source?.platformLabel ?? '视频';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -604,7 +679,7 @@ class _ResultPageState extends State<ResultPage> {
               label: '无水印',
               icon: Icons.check,
               selected: true,
-              onTap: () => _notify('B 站视频本身无水印'),
+              onTap: () => _notify('$platformName视频本身无水印'),
             ),
             _optionChip(
               theme,
@@ -773,11 +848,9 @@ class _ResultPageState extends State<ResultPage> {
   Future<void> _startDownload(BuildContext context, MediaPart part) async {
     final store = context.read<DownloaderStore>();
     final messenger = ScaffoldMessenger.of(context);
-    final qualities = _qualities(part);
-    final int? quality = qualities.isEmpty
-        ? null
-        : qualities[_qualityIndex.clamp(0, qualities.length - 1)];
-    final String qualityText = quality == null ? '视频' : qualityLabel(quality);
+    final MediaStream? selected = _selectedStream(part);
+    final int? quality = selected?.quality;
+    final String qualityText = selected?.displayLabel ?? '视频';
     final String qLabel = _audioOnly
         ? '仅音频'
         : _coverOnly
@@ -788,6 +861,7 @@ class _ResultPageState extends State<ResultPage> {
     final DownloadTask task = store.startDownload(
       part,
       title: store.source?.title ?? part.title,
+      platform: store.source?.platformLabel ?? '哔哩哔哩',
       qualityLabel: qLabel,
       videoQuality: (_audioOnly || _coverOnly) ? null : quality,
       audioOnly: _audioOnly,
