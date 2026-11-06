@@ -480,6 +480,9 @@ class BilibiliResolver {
     final String y = date.year.toString().padLeft(4, '0');
     final String m = date.month.toString().padLeft(2, '0');
     final String d = date.day.toString().padLeft(2, '0');
-    return '$y-$m-$d';
+    final String hh = date.hour.toString().padLeft(2, '0');
+    final String mm = date.minute.toString().padLeft(2, '0');
+    final String ss = date.second.toString().padLeft(2, '0');
+    return '$y-$m-$d $hh:$mm:$ss';
   }
 }

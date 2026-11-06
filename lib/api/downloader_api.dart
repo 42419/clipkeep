@@ -8,15 +8,22 @@ import '../utils/result.dart';
 import '../viewmodels/download_task.dart';
 import '../viewmodels/parsed_source.dart';
 import 'bilibili_resolver.dart';
+import 'dtk_client.dart';
 
 /// 数据接口层：封装 B 站解析与媒体下载，供 Store 调用。
 class DownloaderApi {
-  DownloaderApi({BilibiliResolver? resolver, MediaDownloader? mediaDownloader})
-    : _resolver = resolver ?? BilibiliResolver(),
-      _media = mediaDownloader ?? MediaDownloader();
+  DownloaderApi({
+    BilibiliResolver? resolver,
+    MediaDownloader? mediaDownloader,
+    this.dtkConfig,
+  }) : _resolver = resolver ?? BilibiliResolver(),
+       _media = mediaDownloader ?? MediaDownloader();
 
   final BilibiliResolver _resolver;
   final MediaDownloader _media;
+
+  /// 读取抖音解析服务配置（由 Store 注入，指向 SettingsStore）。
+  final DtkConfig Function()? dtkConfig;
 
   final Dio _http = Dio(
     BaseOptions(
@@ -35,6 +42,15 @@ class DownloaderApi {
   Future<Result<ParsedSource>> parse(String input, {String? cookie}) async {
     try {
       final String normalized = await _normalizeInput(input);
+      if (_isDtkLink(normalized)) {
+        final DtkConfig? config = dtkConfig?.call();
+        if (config == null || !config.isConfigured) {
+          return const Err(
+            AppError('未配置抖音解析服务：请到「设置 → 解析服务（抖音）」填写服务器地址与 API Key'),
+          );
+        }
+        return await DtkClient(config).parse(input);
+      }
       final ParsedSource source = await _resolver.resolve(
         normalized,
         cookie: cookie,
@@ -45,6 +61,13 @@ class DownloaderApi {
     } catch (e) {
       return Err(AppError('解析失败', cause: e));
     }
+  }
+
+  static bool _isDtkLink(String value) {
+    final String lower = value.toLowerCase();
+    return lower.contains('douyin.com') ||
+        lower.contains('iesdouyin.com') ||
+        lower.contains('tiktok.com');
   }
 
   static const Map<String, String> _imageHeaders = <String, String>{
@@ -188,6 +211,13 @@ class DownloaderApi {
     MediaPart part, {
     String? cookie,
   }) async {
+    if (part.id.startsWith('http')) {
+      final DtkConfig? config = dtkConfig?.call();
+      if (config == null || !config.isConfigured) {
+        return const Err(AppError('未配置抖音解析服务'));
+      }
+      return DtkClient(config).refreshStreams(part.id);
+    }
     try {
       final List<MediaStream> streams = await _resolver.fetchStreamsForPart(
         part.id,

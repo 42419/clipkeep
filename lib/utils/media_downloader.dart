@@ -254,7 +254,15 @@ class MediaDownloader {
   ) async {
     final audio = part.pickAudio();
     if (audio == null || audio.primaryUrl.isEmpty) {
-      return const Err(AppError('没有可下载的音频流'));
+      // 抖音等单文件 mp4 没有独立音频流：下载视频后抽取音轨。
+      return _extractAudioFromVideo(
+        part,
+        dirPath,
+        stamp,
+        agg,
+        cancelToken,
+        onProgress,
+      );
     }
     final tempPath = '$dirPath/clipkeep_a_$stamp.m4s';
     await _downloadStream(
@@ -302,6 +310,83 @@ class MediaDownloader {
     } catch (_) {
       await File(tempPath).copy(fallbackPath);
       await _cleanupQuietly(<String>[tempPath]);
+    }
+    return Ok('已保存音频：$fallbackPath');
+  }
+
+  /// 无独立音频流时（如抖音单文件 mp4）：下载视频后用 FFmpeg 抽取音轨。
+  Future<Result<String>> _extractAudioFromVideo(
+    MediaPart part,
+    String dirPath,
+    String stamp,
+    _ByteAggregator agg,
+    CancelToken? cancelToken,
+    void Function(DownloadProgress progress)? onProgress,
+  ) async {
+    final MediaStream? video = part.pickVideoQuality(null);
+    if (video == null || video.primaryUrl.isEmpty) {
+      return const Err(AppError('没有可下载的音频流'));
+    }
+    final String tempVideo = '$dirPath/clipkeep_av_$stamp.m4s';
+    await _downloadStream(
+      video,
+      tempVideo,
+      agg,
+      'video',
+      cancelToken,
+      onProgress,
+    );
+    agg.finishStreamKey('video');
+
+    final String outPath = '$dirPath/clipkeep_audio_$stamp.m4a';
+    FFmpegSession session = await FFmpegKit.execute(
+      '-y -i "$tempVideo" -vn -c:a copy "$outPath"',
+    );
+    ReturnCode? code = await session.getReturnCode();
+    if (!ReturnCode.isSuccess(code)) {
+      session = await FFmpegKit.execute(
+        '-y -i "$tempVideo" -vn -c:a aac -b:a 192k "$outPath"',
+      );
+      code = await session.getReturnCode();
+    }
+    if (!ReturnCode.isSuccess(code)) {
+      await _cleanupQuietly(<String>[tempVideo, outPath]);
+      return const Err(AppError('提取音频失败'));
+    }
+    await _cleanupQuietly(<String>[tempVideo]);
+
+    final String displayName = 'ClipKeep_audio_$stamp.m4a';
+    String? savedPath;
+    try {
+      savedPath = await _mediaStore.invokeMethod<String>(
+        'saveAudio',
+        <String, String>{'path': outPath, 'displayName': displayName},
+      );
+    } catch (_) {
+      savedPath = null;
+    }
+    final int audioLen = await File(outPath).length();
+    onProgress?.call(
+      DownloadProgress(
+        fraction: 1,
+        receivedBytes: audioLen,
+        totalBytes: audioLen,
+      ),
+    );
+    if (savedPath != null) {
+      await _cleanupQuietly(<String>[outPath]);
+      return Ok('已保存音频到 下载/ClipKeep：$displayName');
+    }
+    final Directory outDir = Directory('$dirPath/ClipKeep');
+    if (!await outDir.exists()) {
+      await outDir.create(recursive: true);
+    }
+    final String fallbackPath = '${outDir.path}/$displayName';
+    try {
+      await File(outPath).rename(fallbackPath);
+    } catch (_) {
+      await File(outPath).copy(fallbackPath);
+      await _cleanupQuietly(<String>[outPath]);
     }
     return Ok('已保存音频：$fallbackPath');
   }

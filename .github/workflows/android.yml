@@ -54,7 +54,10 @@ jobs:
         run: flutter analyze
 
       - name: Build release APKs (split per ABI)
-        run: flutter build apk --release --split-per-abi
+        env:
+          DTK_BASE_URL: ${{ secrets.DTK_BASE_URL }}
+          DTK_API_KEY: ${{ secrets.DTK_API_KEY }}
+        run: flutter build apk --release --split-per-abi --dart-define=DTK_BASE_URL="$DTK_BASE_URL" --dart-define=DTK_API_KEY="$DTK_API_KEY"
 
       - name: List built APKs
         run: ls -lh build/app/outputs/flutter-apk/*-release.apk
