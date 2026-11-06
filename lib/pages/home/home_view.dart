@@ -8,6 +8,7 @@ import 'package:material_ui/material_ui.dart'
     hide CornerRounding, RoundedPolygon;
 import 'package:provider/provider.dart';
 
+import '../../components/common/top_edge_blur.dart';
 import '../../stores/auth_store.dart';
 import '../../stores/downloader_store.dart';
 import '../../stores/main_tab_controller.dart';
@@ -102,27 +103,30 @@ class _HomeViewState extends State<HomeView> {
     final AuthStore auth = context.watch<AuthStore>();
     return Scaffold(
       backgroundColor: scheme.surface,
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(
-            AppTheme.pagePadding,
-            8,
-            AppTheme.pagePadding,
-            16,
-          ),
-          children: <Widget>[
-            _buildHeader(theme, scheme),
-            const SizedBox(height: AppTheme.gap),
-            _buildPasteCard(theme, scheme, controller),
-            const SizedBox(height: AppTheme.gap),
-            // 已登录时首页不再占一张卡片；账号状态与退出入口在设置页。
-            // ready 之前不展示，避免已登录用户启动时闪一下「未登录」。
-            if (auth.ready && !auth.isLoggedIn) ...<Widget>[
-              _buildLoginCard(theme, scheme),
-              const SizedBox(height: 24),
+      body: TopEdgeBlur(
+        child: SafeArea(
+          top: false,
+          child: ListView(
+            padding: EdgeInsets.fromLTRB(
+              AppTheme.pagePadding,
+              topEdgeBlurPadding(context),
+              AppTheme.pagePadding,
+              16,
+            ),
+            children: <Widget>[
+              _buildHeader(theme, scheme),
+              const SizedBox(height: AppTheme.gap),
+              _buildPasteCard(theme, scheme, controller),
+              const SizedBox(height: AppTheme.gap),
+              // 已登录时首页不再占一张卡片；账号状态与退出入口在设置页。
+              // ready 之前不展示，避免已登录用户启动时闪一下「未登录」。
+              if (auth.ready && !auth.isLoggedIn) ...<Widget>[
+                _buildLoginCard(theme, scheme),
+                const SizedBox(height: 24),
+              ],
+              _buildRecent(theme, scheme, controller),
             ],
-            _buildRecent(theme, scheme, controller),
-          ],
+          ),
         ),
       ),
     );

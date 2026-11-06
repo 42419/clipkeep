@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../../api/dtk_client.dart';
 import '../../components/common/confirm_dialog.dart';
+import '../../components/common/top_edge_blur.dart';
 import '../../constants/app_constants.dart';
 import '../../stores/auth_store.dart';
 import '../../stores/settings_store.dart';
@@ -26,101 +27,109 @@ class SettingsView extends StatelessWidget {
     final SettingsStore settings = context.watch<SettingsStore>();
     return Scaffold(
       backgroundColor: scheme.surface,
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-          children: <Widget>[
-            Text(
-              '设置',
-              style: theme.textTheme.displaySmall?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
+      body: TopEdgeBlur(
+        child: SafeArea(
+          top: false,
+          child: ListView(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              topEdgeBlurPadding(context),
+              20,
+              24,
             ),
-            const SizedBox(height: 20),
-            _sectionLabel(theme, scheme, '账号'),
-            const SizedBox(height: 10),
-            _biliCard(context, theme, scheme, auth),
-            const SizedBox(height: 8),
-            _douyinCard(theme, scheme),
-            const SizedBox(height: 24),
-            _sectionLabel(theme, scheme, '下载'),
-            const SizedBox(height: 10),
-            M3EList(
-              color: scheme.surfaceContainerLow,
-              itemCount: 2,
-              onTap: (int index) {
-                if (index == 0) {
-                  _showSaveLocation(context, settings);
-                }
-              },
-              itemBuilder: (BuildContext context, int index) {
-                if (index == 0) {
+            children: <Widget>[
+              Text(
+                '设置',
+                style: theme.textTheme.displaySmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 20),
+              _sectionLabel(theme, scheme, '账号'),
+              const SizedBox(height: 10),
+              _biliCard(context, theme, scheme, auth),
+              const SizedBox(height: 8),
+              _douyinCard(theme, scheme),
+              const SizedBox(height: 24),
+              _sectionLabel(theme, scheme, '下载'),
+              const SizedBox(height: 10),
+              M3EList(
+                color: scheme.surfaceContainerLow,
+                itemCount: 2,
+                onTap: (int index) {
+                  if (index == 0) {
+                    _showSaveLocation(context, settings);
+                  }
+                },
+                itemBuilder: (BuildContext context, int index) {
+                  if (index == 0) {
+                    return M3EListItem(
+                      leading: const Icon(Icons.folder_rounded),
+                      headline: '保存位置',
+                      supportingText: settings.saveToGallery
+                          ? '相册 · ${AppConstants.albumName}'
+                          : '系统下载目录 · Download/ClipKeep',
+                      trailing: Icon(
+                        Icons.chevron_right,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    );
+                  }
                   return M3EListItem(
-                    leading: const Icon(Icons.folder_rounded),
-                    headline: '保存位置',
-                    supportingText: settings.saveToGallery
-                        ? '相册 · ${AppConstants.albumName}'
-                        : '系统下载目录 · Download/ClipKeep',
+                    leading: const Icon(Icons.image_rounded),
+                    headline: '下载后保存到相册',
+                    supportingText: '完成后自动写入系统相册',
+                    trailing: M3ESwitch(
+                      value: settings.saveToGallery,
+                      selectedIcon: const Icon(M3EIcons.check),
+                      semanticLabel: '下载后保存到相册',
+                      onChanged: (bool v) => settings.setSaveToGallery(v),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 24),
+              _sectionLabel(theme, scheme, '解析服务（抖音）'),
+              const SizedBox(height: 10),
+              const _DtkServiceCard(),
+              const SizedBox(height: 24),
+              _sectionLabel(theme, scheme, '外观与关于'),
+              const SizedBox(height: 10),
+              M3EList(
+                color: scheme.surfaceContainerLow,
+                itemCount: 2,
+                onTap: (int index) {
+                  if (index == 1) {
+                    _openLicenses(context);
+                  }
+                },
+                itemBuilder: (BuildContext context, int index) {
+                  if (index == 0) {
+                    return M3EListItem(
+                      leading: const Icon(Icons.palette_rounded),
+                      headline: '动态取色',
+                      supportingText: '跟随系统壁纸生成主题色',
+                      trailing: M3ESwitch(
+                        value: settings.dynamicColor,
+                        selectedIcon: const Icon(M3EIcons.check),
+                        semanticLabel: '动态取色',
+                        onChanged: (bool v) => settings.setDynamicColor(v),
+                      ),
+                    );
+                  }
+                  return M3EListItem(
+                    leading: const Icon(Icons.description_rounded),
+                    headline: '开源许可',
+                    supportingText: '第三方组件与来源声明',
                     trailing: Icon(
                       Icons.chevron_right,
                       color: scheme.onSurfaceVariant,
                     ),
                   );
-                }
-                return M3EListItem(
-                  leading: const Icon(Icons.image_rounded),
-                  headline: '下载后保存到相册',
-                  supportingText: '完成后自动写入系统相册',
-                  trailing: M3ESwitch(
-                    value: settings.saveToGallery,
-                    selectedIcon: const Icon(M3EIcons.check),
-                    semanticLabel: '下载后保存到相册',
-                    onChanged: (bool v) => settings.setSaveToGallery(v),
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 24),
-            _sectionLabel(theme, scheme, '解析服务（抖音）'),
-            const SizedBox(height: 10),
-            const _DtkServiceCard(),
-            const SizedBox(height: 24),
-            _sectionLabel(theme, scheme, '外观与关于'),
-            const SizedBox(height: 10),
-            M3EList(
-              color: scheme.surfaceContainerLow,
-              itemCount: 2,
-              onTap: (int index) {
-                if (index == 1) {
-                  _openLicenses(context);
-                }
-              },
-              itemBuilder: (BuildContext context, int index) {
-                if (index == 0) {
-                  return M3EListItem(
-                    leading: const Icon(Icons.palette_rounded),
-                    headline: '动态取色',
-                    supportingText: '跟随系统壁纸生成主题色',
-                    trailing: M3ESwitch(
-                      value: settings.dynamicColor,
-                      selectedIcon: const Icon(M3EIcons.check),
-                      semanticLabel: '动态取色',
-                      onChanged: (bool v) => settings.setDynamicColor(v),
-                    ),
-                  );
-                }
-                return M3EListItem(
-                  leading: const Icon(Icons.description_rounded),
-                  headline: '开源许可',
-                  supportingText: '第三方组件与来源声明',
-                  trailing: Icon(
-                    Icons.chevron_right,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                );
-              },
-            ),
-          ],
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );

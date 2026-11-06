@@ -5,8 +5,8 @@ import 'dart:ui' as ui;
 import 'package:material_ui/material_ui.dart'
     hide CornerRounding, RoundedPolygon;
 import 'package:provider/provider.dart';
-import 'package:soft_edge_blur/soft_edge_blur.dart';
 
+import '../components/common/top_edge_blur.dart';
 import '../stores/downloader_store.dart';
 import '../utils/image_headers.dart';
 import '../theme/app_theme.dart';
@@ -42,68 +42,80 @@ class _ResultPageState extends State<ResultPage> {
 
     return Scaffold(
       backgroundColor: scheme.surface,
+      extendBodyBehindAppBar: true,
       appBar: M3EAppBar.top(
         titleText: '解析结果',
         automaticallyImplyLeading: true,
         toolbarHeight: 64,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
       ),
-      body: SafeArea(
-        top: false,
-        child: Column(
-          children: <Widget>[
-            Expanded(
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 500),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeInCubic,
-                transitionBuilder: (Widget child, Animation<double> animation) {
-                  final Animation<double> curved = CurvedAnimation(
-                    parent: animation,
-                    curve: Curves.easeOutCubic,
-                  );
-                  return FadeTransition(
-                    opacity: curved,
-                    child: ScaleTransition(
-                      scale: Tween<double>(
-                        begin: 0.98,
-                        end: 1.0,
-                      ).animate(curved),
-                      child: child,
-                    ),
-                  );
-                },
-                layoutBuilder: (Widget? current, List<Widget> previous) {
-                  return Stack(
-                    alignment: Alignment.topCenter,
-                    children: <Widget>[
-                      for (final Widget child in previous)
-                        Positioned.fill(child: IgnorePointer(child: child)),
-                      if (current != null) Positioned.fill(child: current),
-                    ],
-                  );
-                },
-                child: loading
-                    ? KeyedSubtree(
-                        key: const ValueKey<String>('loading'),
-                        child: _buildSkeleton(theme, scheme),
-                      )
-                    : (source == null
-                          ? KeyedSubtree(
-                              key: const ValueKey<String>('error'),
-                              child: _buildError(theme, scheme, store),
-                            )
-                          : KeyedSubtree(
-                              key: const ValueKey<String>('content'),
-                              child: _buildContent(theme, scheme, source, part),
-                            )),
+      body: TopEdgeBlur(
+        extra: 64,
+        child: SafeArea(
+          top: false,
+          child: Column(
+            children: <Widget>[
+              Expanded(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 500),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder:
+                      (Widget child, Animation<double> animation) {
+                        final Animation<double> curved = CurvedAnimation(
+                          parent: animation,
+                          curve: Curves.easeOutCubic,
+                        );
+                        return FadeTransition(
+                          opacity: curved,
+                          child: ScaleTransition(
+                            scale: Tween<double>(
+                              begin: 0.98,
+                              end: 1.0,
+                            ).animate(curved),
+                            child: child,
+                          ),
+                        );
+                      },
+                  layoutBuilder: (Widget? current, List<Widget> previous) {
+                    return Stack(
+                      alignment: Alignment.topCenter,
+                      children: <Widget>[
+                        for (final Widget child in previous)
+                          Positioned.fill(child: IgnorePointer(child: child)),
+                        if (current != null) Positioned.fill(child: current),
+                      ],
+                    );
+                  },
+                  child: loading
+                      ? KeyedSubtree(
+                          key: const ValueKey<String>('loading'),
+                          child: _buildSkeleton(theme, scheme),
+                        )
+                      : (source == null
+                            ? KeyedSubtree(
+                                key: const ValueKey<String>('error'),
+                                child: _buildError(theme, scheme, store),
+                              )
+                            : KeyedSubtree(
+                                key: const ValueKey<String>('content'),
+                                child: _buildContent(
+                                  theme,
+                                  scheme,
+                                  source,
+                                  part,
+                                ),
+                              )),
+                ),
               ),
-            ),
-            if (!loading &&
-                source != null &&
-                part != null &&
-                part.streams.isNotEmpty)
-              _buildBottomBar(theme, scheme, part),
-          ],
+              if (!loading &&
+                  source != null &&
+                  part != null &&
+                  part.streams.isNotEmpty)
+                _buildBottomBar(theme, scheme, part),
+            ],
+          ),
         ),
       ),
     );
@@ -114,7 +126,12 @@ class _ResultPageState extends State<ResultPage> {
     Widget bar(double h, double radius, {double? width}) =>
         _ShimmerBox(height: h, radius: radius, width: width);
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        topEdgeBlurPadding(context, extra: 72),
+        16,
+        16,
+      ),
       children: <Widget>[
         bar(208, 40),
         const SizedBox(height: 16),
@@ -208,7 +225,12 @@ class _ResultPageState extends State<ResultPage> {
     MediaPart? part,
   ) {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        topEdgeBlurPadding(context, extra: 72),
+        16,
+        16,
+      ),
       children: <Widget>[
         _buildCover(theme, scheme, source, part),
         const SizedBox(height: 16),
@@ -239,11 +261,11 @@ class _ResultPageState extends State<ResultPage> {
     final double cardHeight = portrait ? 360 : 208;
     final String? url = _normalizeUrl(source.coverUrl);
 
-    Widget coverImage({bool softEdges = true}) {
+    Widget coverImage() {
       if (url == null) {
         return _decorativeCover(scheme);
       }
-      final Widget image = Image.network(
+      return Image.network(
         url,
         headers: imageHeadersFor(url),
         fit: BoxFit.cover,
@@ -260,8 +282,6 @@ class _ResultPageState extends State<ResultPage> {
           StackTrace? stackTrace,
         ) => _decorativeCover(scheme),
       );
-      // 封面上下边缘做渐进模糊，和 edge-to-edge 的柔和过渡一致。
-      return softEdges ? _softEdges(image) : image;
     }
 
     final Widget layer = portrait
@@ -272,7 +292,7 @@ class _ResultPageState extends State<ResultPage> {
               Positioned.fill(
                 child: ImageFiltered(
                   imageFilter: ui.ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-                  child: coverImage(softEdges: false),
+                  child: coverImage(),
                 ),
               ),
               Positioned.fill(
@@ -409,35 +429,6 @@ class _ResultPageState extends State<ResultPage> {
           ),
         ],
       ),
-    );
-  }
-
-  /// 封面上下边缘的渐进模糊，弱化图片与卡片的硬边，配合 edge-to-edge。
-  Widget _softEdges(Widget child) {
-    return SoftEdgeBlur(
-      edges: <EdgeBlur>[
-        EdgeBlur(
-          type: EdgeType.topEdge,
-          size: 30,
-          sigma: 10,
-          controlPoints: <ControlPoint>[
-            ControlPoint(position: 0, type: ControlPointType.visible),
-            ControlPoint(position: 0.55, type: ControlPointType.visible),
-            ControlPoint(position: 1, type: ControlPointType.transparent),
-          ],
-        ),
-        EdgeBlur(
-          type: EdgeType.bottomEdge,
-          size: 30,
-          sigma: 10,
-          controlPoints: <ControlPoint>[
-            ControlPoint(position: 0, type: ControlPointType.visible),
-            ControlPoint(position: 0.55, type: ControlPointType.visible),
-            ControlPoint(position: 1, type: ControlPointType.transparent),
-          ],
-        ),
-      ],
-      child: child,
     );
   }
 
