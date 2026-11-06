@@ -1,5 +1,6 @@
 import 'package:clipkeep/api/dtk_mapper.dart';
 import 'package:clipkeep/stores/auth_store.dart';
+import 'package:clipkeep/stores/main_tab_controller.dart';
 import 'package:clipkeep/utils/format.dart';
 import 'package:clipkeep/viewmodels/download_task.dart';
 import 'package:clipkeep/viewmodels/parsed_source.dart';
@@ -147,6 +148,26 @@ void main() {
         'sourceUrl': 'BV1xx411c7mD',
       });
       expect(task.platform, '哔哩哔哩');
+    });
+  });
+
+  group('底部导航', () {
+    test('openDownloads 切到下载页并指定已完成分段', () {
+      final MainTabController controller = MainTabController();
+      controller.openDownloads(section: 1);
+      expect(controller.index, 1);
+      expect(controller.downloadsSection, 1);
+    });
+
+    test('底部导航来回切换不清空下载分段', () {
+      final MainTabController controller = MainTabController()
+        ..openDownloads(section: 1);
+      controller
+        ..select(0)
+        ..select(1);
+      expect(controller.downloadsSection, 1);
+      controller.selectDownloads(0);
+      expect(controller.downloadsSection, 0);
     });
   });
 

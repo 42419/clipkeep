@@ -440,7 +440,8 @@ class _HomeViewState extends State<HomeView> {
                 ),
               ),
               M3EButton.text(
-                onPressed: () => context.read<MainTabController>().select(1),
+                onPressed: () =>
+                    context.read<MainTabController>().openDownloads(section: 1),
                 size: M3EButtonSize.sm,
                 tooltip: '查看全部下载',
                 child: const Text('全部'),
@@ -513,7 +514,8 @@ class _HomeViewState extends State<HomeView> {
                   Icons.chevron_right,
                   color: scheme.onSurfaceVariant,
                 ),
-                onTap: () => context.read<MainTabController>().select(1),
+                onTap: () =>
+                    context.read<MainTabController>().openDownloads(section: 1),
               );
             },
           ),

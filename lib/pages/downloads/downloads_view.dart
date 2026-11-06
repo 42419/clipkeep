@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart'
 import 'package:provider/provider.dart';
 
 import '../../stores/downloader_store.dart';
+import '../../stores/main_tab_controller.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/format.dart';
 import '../../utils/image_headers.dart';
@@ -23,11 +24,11 @@ class DownloadsView extends StatefulWidget {
 }
 
 class _DownloadsViewState extends State<DownloadsView> {
-  int _tab = 0;
   final ScrollController _scroll = ScrollController();
   bool _showClearFab = true;
   bool _openingResult = false;
   double _lastOffset = 0;
+  int _lastSection = 0;
 
   @override
   void initState() {
@@ -69,7 +70,19 @@ class _DownloadsViewState extends State<DownloadsView> {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
     final DownloaderStore store = context.watch<DownloaderStore>();
-    final List<DownloadTask> tasks = _tab == 0
+    final MainTabController tabs = context.watch<MainTabController>();
+    final int tab = tabs.downloadsSection;
+    if (tab != _lastSection) {
+      _lastSection = tab;
+      _showClearFab = true;
+      _lastOffset = 0;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_scroll.hasClients) {
+          _scroll.jumpTo(0);
+        }
+      });
+    }
+    final List<DownloadTask> tasks = tab == 0
         ? store.activeTasks
         : store.completedTasks;
     return Scaffold(
@@ -86,7 +99,7 @@ class _DownloadsViewState extends State<DownloadsView> {
                 direction: Axis.horizontal,
                 shape: M3EButtonShape.square,
                 size: M3EButtonSize.md,
-                selectedIndex: _tab,
+                selectedIndex: tab,
                 style: M3EButtonStyle.tonal,
                 density: M3EButtonGroupDensity.regular,
                 overflow: M3EButtonGroupOverflow.menu,
@@ -94,11 +107,7 @@ class _DownloadsViewState extends State<DownloadsView> {
                 spacing: 5,
                 onSelectedIndexChanged: (int? index) {
                   if (index != null) {
-                    setState(() {
-                      _tab = index;
-                      _showClearFab = true;
-                      _lastOffset = 0;
-                    });
+                    context.read<MainTabController>().selectDownloads(index);
                   }
                 },
                 actions: <M3EButtonGroupAction>[
@@ -115,8 +124,8 @@ class _DownloadsViewState extends State<DownloadsView> {
             ),
             Expanded(
               child: tasks.isEmpty
-                  ? _buildEmpty(theme, scheme)
-                  : _tab == 0
+                  ? _buildEmpty(theme, scheme, tab)
+                  : tab == 0
                   ? ListView.separated(
                       controller: _scroll,
                       padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
@@ -140,7 +149,7 @@ class _DownloadsViewState extends State<DownloadsView> {
           ],
         ),
       ),
-      floatingActionButton: _tab == 1 && store.completedCount > 0
+      floatingActionButton: tab == 1 && store.completedCount > 0
           ? AnimatedSlide(
               duration: const Duration(milliseconds: 250),
               curve: Curves.easeOutCubic,
@@ -302,19 +311,19 @@ class _DownloadsViewState extends State<DownloadsView> {
     return int.tryParse(head) == null ? null : 'av$head';
   }
 
-  Widget _buildEmpty(ThemeData theme, ColorScheme scheme) {
+  Widget _buildEmpty(ThemeData theme, ColorScheme scheme, int tab) {
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           Icon(
-            _tab == 0 ? Icons.download_outlined : Icons.download_done,
+            tab == 0 ? Icons.download_outlined : Icons.download_done,
             size: 56,
             color: scheme.onSurfaceVariant,
           ),
           const SizedBox(height: 12),
           Text(
-            _tab == 0 ? '暂无进行中的下载' : '还没有已完成下载',
+            tab == 0 ? '暂无进行中的下载' : '还没有已完成下载',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: scheme.onSurfaceVariant,
             ),
