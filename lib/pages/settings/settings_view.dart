@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart'
 import 'package:provider/provider.dart';
 
 import '../../api/dtk_client.dart';
+import '../../components/common/confirm_dialog.dart';
 import '../../constants/app_constants.dart';
 import '../../stores/auth_store.dart';
 import '../../stores/settings_store.dart';
@@ -190,15 +191,17 @@ class SettingsView extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           Row(
+            mainAxisAlignment: MainAxisAlignment.end,
             children: <Widget>[
-              if (loggedIn)
+              if (loggedIn) ...<Widget>[
                 M3EButton.text(
                   onPressed: () => _confirmLogout(context, auth),
                   size: M3EButtonSize.sm,
                   tooltip: '退出登录',
                   child: const Text('退出登录'),
                 ),
-              const Spacer(),
+                const SizedBox(width: 12),
+              ],
               M3EButton.filled(
                 onPressed: () => _openLogin(context),
                 size: M3EButtonSize.sm,
@@ -379,29 +382,14 @@ class SettingsView extends StatelessWidget {
   }
 
   Future<void> _confirmLogout(BuildContext context, AuthStore auth) async {
-    final bool? confirmed = await M3EDialog.show<bool>(
+    final bool confirmed = await showConfirmDialog(
       context,
-      dialog: M3EDialog(
-        title: '退出哔哩哔哩登录？',
-        icon: const Icon(Icons.logout),
-        content: const Text('退出后将无法解析和下载高清画质。'),
-        actions: <Widget>[
-          M3EButton.text(
-            onPressed: () => Navigator.of(context).pop(false),
-            size: M3EButtonSize.md,
-            tooltip: '取消',
-            child: const Text('取消'),
-          ),
-          M3EButton.filled(
-            onPressed: () => Navigator.of(context).pop(true),
-            size: M3EButtonSize.md,
-            tooltip: '退出登录',
-            child: const Text('退出'),
-          ),
-        ],
-      ),
+      title: '退出哔哩哔哩登录？',
+      content: '退出后将无法解析和下载高清画质。',
+      confirmLabel: '退出',
+      icon: Icons.logout,
     );
-    if (confirmed == true) {
+    if (confirmed) {
       await auth.logout();
       if (context.mounted) {
         _showSnack(context, '已退出哔哩哔哩登录');

@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart'
     hide CornerRounding, RoundedPolygon;
 import 'package:provider/provider.dart';
 
+import '../../components/common/confirm_dialog.dart';
 import '../../stores/downloader_store.dart';
 import '../../stores/main_tab_controller.dart';
 import '../../theme/app_theme.dart';
@@ -190,38 +191,9 @@ class _DownloadsViewState extends State<DownloadsView> {
     );
   }
 
-  Future<bool> _confirmAction({
-    required String title,
-    required String content,
-    required String confirmLabel,
-  }) async {
-    final bool? confirmed = await M3EDialog.show<bool>(
-      context,
-      dialog: M3EDialog(
-        title: title,
-        icon: const Icon(M3EIcons.error),
-        content: Text(content),
-        actions: <Widget>[
-          M3EButton.text(
-            onPressed: () => Navigator.of(context).pop(false),
-            size: M3EButtonSize.md,
-            tooltip: '取消',
-            child: const Text('取消'),
-          ),
-          M3EButton.filled(
-            onPressed: () => Navigator.of(context).pop(true),
-            size: M3EButtonSize.md,
-            tooltip: confirmLabel,
-            child: Text(confirmLabel),
-          ),
-        ],
-      ),
-    );
-    return confirmed == true;
-  }
-
   Future<void> _confirmClearCompleted(DownloaderStore store) async {
-    final bool ok = await _confirmAction(
+    final bool ok = await showConfirmDialog(
+      context,
       title: '清空已完成记录？',
       content: '只删除下载记录，不会删除已保存到相册或下载目录的文件。',
       confirmLabel: '清空',
@@ -235,7 +207,8 @@ class _DownloadsViewState extends State<DownloadsView> {
     DownloaderStore store,
     DownloadTask task,
   ) async {
-    final bool ok = await _confirmAction(
+    final bool ok = await showConfirmDialog(
+      context,
       title: '删除这条记录？',
       content: '只删除下载记录与临时文件，不会删除已保存到相册或下载目录的文件。',
       confirmLabel: '删除',
