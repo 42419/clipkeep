@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import '../../stores/downloader_store.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/format.dart';
+import '../../utils/image_headers.dart';
 import '../../viewmodels/download_task.dart';
 import '../result_page.dart';
 
@@ -21,13 +22,6 @@ class DownloadsView extends StatefulWidget {
 }
 
 class _DownloadsViewState extends State<DownloadsView> {
-  static const Map<String, String> _imageHeaders = <String, String>{
-    'referer': 'https://www.bilibili.com/',
-    'user-agent':
-        'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
-        '(KHTML, like Gecko) Chrome/124 Mobile Safari/537.36',
-  };
-
   int _tab = 0;
   final ScrollController _scroll = ScrollController();
   bool _showClearFab = true;
@@ -257,6 +251,10 @@ class _DownloadsViewState extends State<DownloadsView> {
   }
 
   String? _taskInput(DownloadTask task) {
+    final String? saved = task.sourceUrl;
+    if (saved != null && saved.startsWith('http')) {
+      return saved;
+    }
     final String? id = task.part?.id;
     if (id == null) {
       return null;
@@ -509,7 +507,7 @@ class _DownloadsViewState extends State<DownloadsView> {
             width: 56,
             height: 56,
             fit: BoxFit.cover,
-            headers: _imageHeaders,
+            headers: imageHeadersFor(url),
             loadingBuilder:
                 (
                   BuildContext context,

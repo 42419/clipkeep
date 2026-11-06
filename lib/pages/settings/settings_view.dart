@@ -10,18 +10,12 @@ import '../../stores/auth_store.dart';
 import '../../stores/settings_store.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/result.dart';
+import '../../utils/image_headers.dart';
 import '../login/bilibili_login_page.dart';
 
 /// 设置页：账号 / 下载 / 外观与关于。
 class SettingsView extends StatelessWidget {
   const SettingsView({super.key});
-
-  static const Map<String, String> _imageHeaders = <String, String>{
-    'referer': 'https://www.bilibili.com/',
-    'user-agent':
-        'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
-        '(KHTML, like Gecko) Chrome/124 Mobile Safari/537.36',
-  };
 
   @override
   Widget build(BuildContext context) {
@@ -248,7 +242,7 @@ class SettingsView extends StatelessWidget {
         child: Image.network(
           face,
           fit: BoxFit.cover,
-          headers: _imageHeaders,
+          headers: imageHeadersFor(face),
           errorBuilder: (
             BuildContext context,
             Object error,

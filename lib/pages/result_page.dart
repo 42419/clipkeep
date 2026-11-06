@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart'
 import 'package:provider/provider.dart';
 
 import '../stores/downloader_store.dart';
+import '../utils/image_headers.dart';
 import '../theme/app_theme.dart';
 import '../viewmodels/download_task.dart';
 import '../viewmodels/parsed_source.dart';
@@ -20,13 +21,6 @@ class ResultPage extends StatefulWidget {
 }
 
 class _ResultPageState extends State<ResultPage> {
-  static const Map<String, String> _imageHeaders = <String, String>{
-    'referer': 'https://www.bilibili.com/',
-    'user-agent':
-        'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
-        '(KHTML, like Gecko) Chrome/124 Mobile Safari/537.36',
-  };
-
   int _qualityIndex = 0;
   bool _audioOnly = false;
   bool _coverOnly = false;
@@ -103,7 +97,10 @@ class _ResultPageState extends State<ResultPage> {
                             )),
               ),
             ),
-            if (!loading && source != null)
+            if (!loading &&
+                source != null &&
+                part != null &&
+                part.streams.isNotEmpty)
               _buildBottomBar(theme, scheme, part),
           ],
         ),
@@ -247,7 +244,7 @@ class _ResultPageState extends State<ResultPage> {
       }
       return Image.network(
         url,
-        headers: _imageHeaders,
+        headers: imageHeadersFor(url),
         fit: BoxFit.cover,
         loadingBuilder:
             (BuildContext context, Widget child, ImageChunkEvent? progress) {
@@ -492,7 +489,7 @@ class _ResultPageState extends State<ResultPage> {
         width: 44,
         height: 44,
         fit: BoxFit.cover,
-        headers: _imageHeaders,
+        headers: imageHeadersFor(url),
         loadingBuilder:
             (BuildContext context, Widget child, ImageChunkEvent? progress) {
               if (progress == null) {
@@ -868,6 +865,7 @@ class _ResultPageState extends State<ResultPage> {
       coverOnly: _coverOnly,
       saveCover: _videoWithCover,
       coverUrl: store.source?.coverUrl,
+      sourceUrl: part.id,
     );
     setState(() => _activeTaskId = task.id);
     messenger.clearSnackBars();

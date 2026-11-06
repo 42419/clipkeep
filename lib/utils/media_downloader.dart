@@ -7,6 +7,9 @@ import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new/ffmpeg_session.dart';
 import 'package:ffmpeg_kit_flutter_new/return_code.dart';
 import 'package:ffmpeg_kit_flutter_new/statistics.dart';
+
+import 'image_headers.dart';
+
 import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -28,12 +31,21 @@ class MediaDownloader {
 
   String? _cookie;
 
-  Map<String, String> _withCookie(Map<String, String> base) {
+  Map<String, String> _withCookie(Map<String, String> base, {String? url}) {
     final String? cookie = _cookie;
-    if (cookie == null || cookie.isEmpty) {
+    if (cookie == null || cookie.isEmpty || !_isBiliHost(url)) {
       return base;
     }
     return <String, String>{...base, 'cookie': cookie};
+  }
+
+  /// 只把 B 站 Cookie 发给 B 站域名，避免把登录凭据泄露给抖音等第三方 CDN。
+  bool _isBiliHost(String? url) {
+    final String u = (url ?? '').toLowerCase();
+    return u.contains('bilibili.com') ||
+        u.contains('bilivideo.com') ||
+        u.contains('hdslb.com') ||
+        u.contains('b23.tv');
   }
 
   /// 把异常转成简短可读文案，便于在下载失败卡片上定位问题。
@@ -45,13 +57,6 @@ class MediaDownloader {
     final String s = e.toString();
     return s.length > 160 ? '${s.substring(0, 160)}…' : s;
   }
-
-  static const Map<String, String> _imageHeaders = <String, String>{
-    'referer': 'https://www.bilibili.com/',
-    'user-agent':
-        'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
-        '(KHTML, like Gecko) Chrome/124 Mobile Safari/537.36',
-  };
 
   Future<Result<String>> download(
     MediaPart part, {
@@ -413,7 +418,7 @@ class MediaDownloader {
         coverPath,
         cancelToken: cancelToken,
         options: Options(
-          headers: _withCookie(_imageHeaders),
+          headers: _withCookie(imageHeadersFor(url), url: url),
           receiveTimeout: const Duration(minutes: 5),
         ),
         onReceiveProgress: (int received, int total) {
@@ -458,7 +463,7 @@ class MediaDownloader {
         url,
         coverPath,
         options: Options(
-          headers: _withCookie(_imageHeaders),
+          headers: _withCookie(imageHeadersFor(url), url: url),
           receiveTimeout: const Duration(minutes: 5),
         ),
       );
@@ -753,7 +758,7 @@ class MediaDownloader {
   }) async {
     final int from = rangeFrom ?? existing;
     final Map<String, String> requestHeaders = <String, String>{
-      ..._withCookie(headers),
+      ..._withCookie(headers, url: url),
       if (to != null)
         'Range': 'bytes=$from-$to'
       else if (from > 0)
@@ -802,7 +807,7 @@ class MediaDownloader {
         options: Options(
           responseType: ResponseType.bytes,
           headers: <String, String>{
-            ..._withCookie(headers),
+            ..._withCookie(headers, url: url),
             'Range': 'bytes=0-1',
           },
           validateStatus: (int? status) => status != null && status < 500,

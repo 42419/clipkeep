@@ -101,6 +101,7 @@ class DownloaderStore extends ChangeNotifier {
     bool coverOnly = false,
     bool saveCover = false,
     String? coverUrl,
+    String? sourceUrl,
   }) {
     final DownloadTask task = DownloadTask(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
@@ -114,6 +115,7 @@ class DownloaderStore extends ChangeNotifier {
       coverOnly: coverOnly,
       saveCover: saveCover,
       coverUrl: coverUrl,
+      sourceUrl: sourceUrl,
     );
     _tasks.insert(0, task);
     notifyListeners();

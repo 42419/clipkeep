@@ -36,6 +36,7 @@ class DownloadTask {
     this.coverOnly = false,
     this.saveCover = false,
     this.coverUrl,
+    this.sourceUrl,
     this.status = DownloadStatus.downloading,
     this.progress = 0,
     this.receivedBytes = 0,
@@ -57,6 +58,9 @@ class DownloadTask {
   final bool coverOnly;
   final bool saveCover;
   final String? coverUrl;
+
+  /// 原始解析链接（抖音为 web_url），用于重启后重新解析。
+  final String? sourceUrl;
   final DateTime createdAt;
 
   DownloadStatus status;
@@ -83,6 +87,7 @@ class DownloadTask {
     'receivedBytes': receivedBytes,
     'totalBytes': totalBytes,
     'coverUrl': coverUrl,
+    'sourceUrl': sourceUrl,
     'thumbnailPath': thumbnailPath,
     'createdAt': createdAt.toIso8601String(),
   };
@@ -90,7 +95,7 @@ class DownloadTask {
   factory DownloadTask.fromRecord(Map<String, dynamic> json) => DownloadTask(
     id: (json['id'] as String?) ?? '',
     title: (json['title'] as String?) ?? '',
-    platform: (json['platform'] as String?) ?? '',
+    platform: _resolvePlatform(json),
     qualityLabel: (json['qualityLabel'] as String?) ?? '',
     createdAt:
         DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
@@ -99,6 +104,18 @@ class DownloadTask {
     receivedBytes: (json['receivedBytes'] as num?)?.toInt() ?? 0,
     totalBytes: (json['totalBytes'] as num?)?.toInt() ?? 0,
     coverUrl: json['coverUrl'] as String?,
+    sourceUrl: json['sourceUrl'] as String?,
     thumbnailPath: json['thumbnailPath'] as String?,
   );
+}
+
+/// 旧记录没有 platform 时，按链接推断，避免显示空平台。
+String _resolvePlatform(Map<String, dynamic> json) {
+  final String value = (json['platform'] as String?) ?? '';
+  if (value.isNotEmpty) {
+    return value;
+  }
+  final String probe = '${json['sourceUrl'] ?? ''} ${json['coverUrl'] ?? ''}'
+      .toLowerCase();
+  return probe.contains('douyin') ? '抖音' : '哔哩哔哩';
 }

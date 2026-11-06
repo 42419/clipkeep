@@ -13,6 +13,7 @@ import '../../stores/downloader_store.dart';
 import '../../stores/main_tab_controller.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/format.dart';
+import '../../utils/image_headers.dart';
 import '../../viewmodels/download_task.dart';
 import '../login/bilibili_login_page.dart';
 import '../result_page.dart';
@@ -26,13 +27,6 @@ class HomeView extends StatefulWidget {
 }
 
 class _HomeViewState extends State<HomeView> {
-  static const Map<String, String> _imageHeaders = <String, String>{
-    'referer': 'https://www.bilibili.com/',
-    'user-agent':
-        'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
-        '(KHTML, like Gecko) Chrome/124 Mobile Safari/537.36',
-  };
-
   final TextEditingController _input = TextEditingController();
   int _mode = 0; // 0 自动识别 / 1 抖音 / 2 哔哩哔哩
 
@@ -57,6 +51,27 @@ class _HomeViewState extends State<HomeView> {
     if (text.isEmpty) {
       messenger.clearSnackBars();
       messenger.showSnackBar(const SnackBar(content: Text('请先粘贴视频链接')));
+      return;
+    }
+    // 首页平台切换只在指定平台时做预校验，真正路由仍按链接自动识别。
+    final String lower = text.toLowerCase();
+    final bool looksDouyin =
+        lower.contains('douyin') || lower.contains('iesdouyin');
+    final bool looksBili =
+        lower.contains('bilibili') ||
+        lower.contains('b23.tv') ||
+        lower.contains('bili2233') ||
+        RegExp(r'BV[0-9A-Za-z]{10}').hasMatch(text);
+    if (_mode == 1 && !looksDouyin) {
+      messenger.clearSnackBars();
+      messenger.showSnackBar(const SnackBar(content: Text('当前选择抖音，请粘贴抖音分享链接')));
+      return;
+    }
+    if (_mode == 2 && !looksBili) {
+      messenger.clearSnackBars();
+      messenger.showSnackBar(
+        const SnackBar(content: Text('当前选择哔哩哔哩，请粘贴 B 站链接或 BV 号')),
+      );
       return;
     }
     // 立即跳转，解析在网络请求进行中完成，结果页展示骨架屏。
@@ -272,7 +287,7 @@ class _HomeViewState extends State<HomeView> {
                     ? Image.network(
                         face,
                         fit: BoxFit.cover,
-                        headers: _imageHeaders,
+                        headers: imageHeadersFor(face),
                         errorBuilder: (
                           BuildContext context,
                           Object error,
@@ -520,7 +535,7 @@ class _HomeViewState extends State<HomeView> {
             width: 60,
             height: 60,
             fit: BoxFit.cover,
-            headers: _imageHeaders,
+            headers: imageHeadersFor(url),
             loadingBuilder:
                 (
                   BuildContext context,
