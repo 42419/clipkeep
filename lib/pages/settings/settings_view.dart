@@ -4,10 +4,12 @@ import 'package:material_ui/material_ui.dart'
     hide CornerRounding, RoundedPolygon;
 import 'package:provider/provider.dart';
 
+import '../../api/dtk_client.dart';
 import '../../constants/app_constants.dart';
 import '../../stores/auth_store.dart';
 import '../../stores/settings_store.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/result.dart';
 import '../login/bilibili_login_page.dart';
 
 /// 设置页：账号 / 下载 / 外观与关于。
@@ -79,6 +81,10 @@ class SettingsView extends StatelessWidget {
                 );
               },
             ),
+            const SizedBox(height: 24),
+            _sectionLabel(theme, scheme, '解析服务（抖音）'),
+            const SizedBox(height: 10),
+            const _DtkServiceCard(),
             const SizedBox(height: 24),
             _sectionLabel(theme, scheme, '外观与关于'),
             const SizedBox(height: 10),
@@ -421,6 +427,137 @@ class SettingsView extends StatelessWidget {
             tooltip: '关闭',
             child: const Text('关闭'),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DtkServiceCard extends StatefulWidget {
+  const _DtkServiceCard();
+
+  @override
+  State<_DtkServiceCard> createState() => _DtkServiceCardState();
+}
+
+class _DtkServiceCardState extends State<_DtkServiceCard> {
+  late final TextEditingController _urlController;
+  late final TextEditingController _keyController;
+  bool _testing = false;
+  String? _status;
+  bool _ok = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final SettingsStore settings = context.read<SettingsStore>();
+    _urlController = TextEditingController(text: settings.dtkBaseUrl);
+    _keyController = TextEditingController(text: settings.dtkApiKey);
+  }
+
+  @override
+  void dispose() {
+    _urlController.dispose();
+    _keyController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final SettingsStore settings = context.read<SettingsStore>();
+    await settings.setDtkBaseUrl(_urlController.text);
+    await settings.setDtkApiKey(_keyController.text);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _ok = true;
+      _status = '已保存';
+    });
+  }
+
+  Future<void> _test() async {
+    final SettingsStore settings = context.read<SettingsStore>();
+    await settings.setDtkBaseUrl(_urlController.text);
+    await settings.setDtkApiKey(_keyController.text);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _testing = true;
+      _status = '正在连接…';
+      _ok = false;
+    });
+    final Result<String> result = await DtkClient(
+      DtkConfig(baseUrl: _urlController.text, apiKey: _keyController.text),
+    ).check();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _testing = false;
+      if (result is Ok<String>) {
+        _ok = true;
+        _status = result.value;
+      } else if (result is Err<String>) {
+        _ok = false;
+        _status = result.error.message;
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          M3ETextField(
+            controller: _urlController,
+            label: '服务器地址',
+            placeholder: '例如 http://192.168.1.10:8000',
+          ),
+          const SizedBox(height: 12),
+          M3ETextField(
+            controller: _keyController,
+            label: 'API Key',
+            obscureText: true,
+            showPasswordToggle: true,
+            supportingText: '服务器控制台创建，仅需 douyin:read 权限',
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: <Widget>[
+              M3EButton.filled(
+                onPressed: _testing ? null : _test,
+                tooltip: '测试连接',
+                size: M3EButtonSize.sm,
+                child: Text(_testing ? '测试中…' : '测试连接'),
+              ),
+              const SizedBox(width: 8),
+              M3EButton.text(
+                onPressed: _testing ? null : _save,
+                tooltip: '保存',
+                size: M3EButtonSize.sm,
+                child: const Text('保存'),
+              ),
+            ],
+          ),
+          if (_status != null) ...<Widget>[
+            const SizedBox(height: 8),
+            Text(
+              _status!,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: _ok ? scheme.primary : scheme.error,
+              ),
+            ),
+          ],
         ],
       ),
     );

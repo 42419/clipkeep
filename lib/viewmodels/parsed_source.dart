@@ -8,6 +8,9 @@ class ParsedSource {
     this.publishDate,
     this.ownerMid,
     this.authorAvatarUrl,
+    this.platform = 'bilibili',
+    this.videoWidth,
+    this.videoHeight,
   });
 
   final String title;
@@ -17,6 +20,49 @@ class ParsedSource {
   final int? ownerMid;
   final String? authorAvatarUrl;
   final List<MediaPart> parts;
+
+  /// 来源平台：bilibili / douyin / tiktok。
+  final String platform;
+
+  /// 视频像素宽高（用于横竖屏判断与封面比例），未知为 null。
+  final int? videoWidth;
+  final int? videoHeight;
+
+  /// 平台展示名。
+  String get platformLabel {
+    switch (platform) {
+      case 'douyin':
+        return '抖音';
+      case 'tiktok':
+        return 'TikTok';
+      default:
+        return '哔哩哔哩';
+    }
+  }
+
+  /// 竖屏：高 > 宽*1.05（对齐 douyinDL 脚本的判定）。
+  bool get isPortrait {
+    final int w = videoWidth ?? 0;
+    final int h = videoHeight ?? 0;
+    return w > 0 && h > 0 && h > w * 1.05;
+  }
+
+  /// 横屏：宽 > 高*1.05。
+  bool get isLandscape {
+    final int w = videoWidth ?? 0;
+    final int h = videoHeight ?? 0;
+    return w > 0 && h > 0 && w > h * 1.05;
+  }
+
+  /// 封面宽高比，未知时按 16:9。
+  double get aspectRatio {
+    final int w = videoWidth ?? 0;
+    final int h = videoHeight ?? 0;
+    if (w > 0 && h > 0) {
+      return w / h;
+    }
+    return 16 / 9;
+  }
 }
 
 class MediaPart {
@@ -111,5 +157,13 @@ String qualityLabel(int qn) {
     127: '8K',
   };
   final label = labels[qn];
-  return label ?? 'QN$qn';
+  if (label != null) {
+    return label;
+  }
+  // 抖音等平台用像素高（如 720/1080）作为质量值，直接渲染为 720P/1080P。
+  if (qn >= 240) {
+    return '$qn'
+        'P';
+  }
+  return 'QN$qn';
 }

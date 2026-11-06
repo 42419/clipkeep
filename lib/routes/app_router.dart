@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart'
 import 'package:provider/provider.dart';
 
 import '../api/downloader_api.dart';
+import '../api/dtk_client.dart';
 import '../pages/main_page.dart';
 import '../stores/auth_store.dart';
 import '../stores/downloader_store.dart';
@@ -18,7 +19,15 @@ Widget getRootWidget() {
       ChangeNotifierProvider<AuthStore>(create: (_) => AuthStore()..load()),
       ChangeNotifierProvider<DownloaderStore>(
         create: (BuildContext ctx) => DownloaderStore(
-          DownloaderApi(),
+          DownloaderApi(
+            dtkConfig: () {
+              final SettingsStore settings = ctx.read<SettingsStore>();
+              return DtkConfig(
+                baseUrl: settings.dtkBaseUrl,
+                apiKey: settings.dtkApiKey,
+              );
+            },
+          ),
           cookieProvider: () => ctx.read<AuthStore>().cookie,
         ),
       ),

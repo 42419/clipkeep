@@ -209,7 +209,7 @@ class _ResultPageState extends State<ResultPage> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       children: <Widget>[
-        _buildCover(theme, scheme, source.coverUrl, part),
+        _buildCover(theme, scheme, source, part),
         const SizedBox(height: 16),
         Text(
           source.title,
@@ -230,43 +230,60 @@ class _ResultPageState extends State<ResultPage> {
   Widget _buildCover(
     ThemeData theme,
     ColorScheme scheme,
-    String? coverUrl,
+    ParsedSource source,
     MediaPart? part,
   ) {
-    const String platform = '哔哩哔哩';
-    final String? url = _normalizeUrl(coverUrl);
-    final Widget background = url == null
-        ? _decorativeCover(scheme)
-        : Image.network(
-            url,
-            headers: _imageHeaders,
-            fit: BoxFit.cover,
-            width: double.infinity,
-            height: 208,
-            loadingBuilder:
-                (
-                  BuildContext context,
-                  Widget child,
-                  ImageChunkEvent? progress,
-                ) {
-                  if (progress == null) {
-                    return child;
-                  }
-                  return _ShimmerBox(height: 208, radius: AppTheme.radiusXl);
-                },
-            errorBuilder: (
-              BuildContext context,
-              Object error,
-              StackTrace? stackTrace,
-            ) => _decorativeCover(scheme),
-          );
+    final String platform = source.platformLabel;
+    final bool portrait = source.isPortrait;
+    final double cardHeight = portrait ? 360 : 208;
+    final String? url = _normalizeUrl(source.coverUrl);
+
+    Widget coverImage() {
+      if (url == null) {
+        return _decorativeCover(scheme);
+      }
+      return Image.network(
+        url,
+        headers: _imageHeaders,
+        fit: BoxFit.cover,
+        loadingBuilder:
+            (BuildContext context, Widget child, ImageChunkEvent? progress) {
+              if (progress == null) {
+                return child;
+              }
+              return ColoredBox(color: scheme.surfaceContainerHighest);
+            },
+        errorBuilder: (
+          BuildContext context,
+          Object error,
+          StackTrace? stackTrace,
+        ) => _decorativeCover(scheme),
+      );
+    }
+
+    final Widget layer = portrait
+        ? ColoredBox(
+            color: scheme.surfaceContainerHighest,
+            child: Center(
+              child: AspectRatio(
+                aspectRatio: source.aspectRatio,
+                child: coverImage(),
+              ),
+            ),
+          )
+        : coverImage();
+
+    final Color platformDot = source.platform == 'douyin'
+        ? const Color(0xFF161823)
+        : const Color(0xFFF25C5C);
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(AppTheme.radiusXl),
       child: SizedBox(
-        height: 208,
+        height: cardHeight,
         child: Stack(
           children: <Widget>[
-            Positioned.fill(child: background),
+            Positioned.fill(child: layer),
             Center(
               child: Container(
                 width: 72,
@@ -296,8 +313,8 @@ class _ResultPageState extends State<ResultPage> {
                     Container(
                       width: 8,
                       height: 8,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFF25C5C),
+                      decoration: BoxDecoration(
+                        color: platformDot,
                         shape: BoxShape.circle,
                       ),
                     ),
@@ -342,7 +359,6 @@ class _ResultPageState extends State<ResultPage> {
 
   Widget _decorativeCover(ColorScheme scheme) {
     return Container(
-      height: 208,
       color: scheme.primaryContainer,
       child: Stack(
         children: <Widget>[
@@ -403,7 +419,8 @@ class _ResultPageState extends State<ResultPage> {
     final author = source.author.isEmpty ? '未知作者' : source.author;
     final name = author.startsWith('@') ? author : '@$author';
     final date = source.publishDate ?? '';
-    final meta = date.isEmpty ? '哔哩哔哩' : '$date · 哔哩哔哩';
+    final String platformName = source.platformLabel;
+    final meta = date.isEmpty ? platformName : '$date · $platformName';
     return Row(
       children: <Widget>[
         _buildAvatar(source, scheme),
