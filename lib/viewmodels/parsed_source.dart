@@ -131,6 +131,7 @@ class MediaStream {
     this.height,
     this.fps,
     this.bitrate,
+    this.sizeBytes,
     this.resolutionLabel,
   });
 
@@ -146,6 +147,9 @@ class MediaStream {
   final int? height;
   final int? fps;
   final int? bitrate;
+
+  /// 精确文件大小（字节），来自 DTK 归一化流信息。
+  final int? sizeBytes;
 
   /// 画质短标签，如 1080P；为空时回退 qualityLabel(quality)。
   final String? resolutionLabel;

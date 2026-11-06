@@ -645,7 +645,9 @@ class _ResultPageState extends State<ResultPage> {
   }
 
   String _streamDetailText(MediaStream stream, MediaPart? part) {
-    final String size = _estimateSize(stream, part);
+    final String size = stream.sizeBytes != null
+        ? '${(stream.sizeBytes! / 1024 / 1024).toStringAsFixed(1)} MB'
+        : _estimateSize(stream, part);
     final List<String> parts = <String>[
       if (stream.detailText.isNotEmpty) stream.detailText,
       stream.codec.toUpperCase(),
@@ -859,6 +861,7 @@ class _ResultPageState extends State<ResultPage> {
     final DownloadTask task = store.startDownload(
       part,
       title: store.source?.title ?? part.title,
+      platform: store.source?.platformLabel ?? '哔哩哔哩',
       qualityLabel: qLabel,
       videoQuality: (_audioOnly || _coverOnly) ? null : quality,
       audioOnly: _audioOnly,
