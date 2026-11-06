@@ -491,6 +491,8 @@ class _HomeViewState extends State<HomeView> {
           M3EList(
             gap: 8,
             itemCount: tasks.length,
+            onTap: (int index) =>
+                context.read<MainTabController>().openDownloads(section: 1),
             itemBuilder: (BuildContext context, int index) {
               final DownloadTask task = tasks[index];
               return M3EListItem(
@@ -514,8 +516,6 @@ class _HomeViewState extends State<HomeView> {
                   Icons.chevron_right,
                   color: scheme.onSurfaceVariant,
                 ),
-                onTap: () =>
-                    context.read<MainTabController>().openDownloads(section: 1),
               );
             },
           ),
