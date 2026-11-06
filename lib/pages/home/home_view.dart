@@ -116,7 +116,8 @@ class _HomeViewState extends State<HomeView> {
             _buildPasteCard(theme, scheme, controller),
             const SizedBox(height: AppTheme.gap),
             // 已登录时首页不再占一张卡片；账号状态与退出入口在设置页。
-            if (!auth.isLoggedIn) ...<Widget>[
+            // ready 之前不展示，避免已登录用户启动时闪一下「未登录」。
+            if (auth.ready && !auth.isLoggedIn) ...<Widget>[
               _buildLoginCard(theme, scheme),
               const SizedBox(height: 24),
             ],
