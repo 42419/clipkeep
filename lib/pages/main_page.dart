@@ -208,6 +208,9 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: tab.index,
+        // drawUnderSystemBars 会清掉 MediaQuery.padding.bottom，
+        // 必须用 viewPadding 才能把图标抬到手势条上方。
+        maintainBottomViewPadding: true,
         onDestinationSelected: tab.select,
         destinations: const <NavigationDestination>[
           NavigationDestination(

@@ -313,7 +313,12 @@ class _BilibiliLoginPageState extends State<BilibiliLoginPage> {
   Widget _buildBottomCard(ThemeData theme, ColorScheme scheme) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        16,
+        16,
+        20 + M3ESafeArea.bottomOf(context),
+      ),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerLow,
         borderRadius: const BorderRadius.vertical(

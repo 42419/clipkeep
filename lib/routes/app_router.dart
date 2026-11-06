@@ -43,6 +43,9 @@ Widget getRootWidget() {
           debugShowCheckedModeBanner: false,
           dynamicColoring: settings.dynamicColor,
           autoTheming: true,
+          // 全应用 edge-to-edge：背景延伸到状态栏/导航栏下方，
+          // 内容由各页 SafeArea 与 NavigationBar 的 viewPadding 保护。
+          drawUnderSystemBars: true,
           data: AppTheme.light(),
           home: const MainPage(),
           routes: getRootRoute(),

@@ -16,6 +16,13 @@ Future<void> showClipboardLinkSheet(
     backgroundColor: Colors.transparent,
     isScrollControlled: true,
     useSafeArea: true,
+    // 比默认更慢的 easeOutCubic，弹出更柔和；关闭稍快，避免拖沓。
+    sheetAnimationStyle: const AnimationStyle(
+      curve: Curves.easeOutCubic,
+      duration: Duration(milliseconds: 360),
+      reverseCurve: Curves.easeInCubic,
+      reverseDuration: Duration(milliseconds: 220),
+    ),
     builder: (BuildContext ctx) {
       return _ClipboardSheet(
         link: link,
@@ -57,7 +64,12 @@ class _ClipboardSheetState extends State<_ClipboardSheet> {
         color: scheme.surface,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       ),
-      padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+      padding: EdgeInsets.fromLTRB(
+        20,
+        10,
+        20,
+        20 + M3ESafeArea.bottomOf(context),
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
