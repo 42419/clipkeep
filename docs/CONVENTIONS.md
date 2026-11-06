@@ -1,67 +1,64 @@
 # ClipKeep 项目规约
 
-这些规则用于保证功能不断增加时项目仍然可维护。每次改动都必须遵守。
+这些规则用于保证功能持续增加时项目仍然可维护。每次改动都必须遵守。
+最后更新：2026-11-06
 
-## 添加依赖
-
-- 一律用 `flutter pub add <包名>`（或 `flutter pub add --dev <包名>`）添加依赖，**禁止手写 `pubspec.yaml` 里的版本号**。`flutter pub add` 会自动解析版本并更新 `pubspec.lock`。
-
-## 目录结构（按功能优先 + 分层）
+## 目录结构
 
 ```
 lib/
-  main.dart
-  app/         app.dart、router.dart、theme.dart、providers.dart
-  core/        result.dart、logger、constants、extensions
-  ffi/         bdl_ffi.dart（绑定）、bdl_service.dart（异步/isolate）
-  features/<名称>/
-    domain/    entities/、repositories/（接口）、usecases/
-    data/      dto/、datasources/、repositories/（实现）
-    presentation/  pages/、widgets/、controllers/（ChangeNotifier）
-  shared/      widgets/、utils/
-tool/          fetch_ffi.ps1 / fetch_ffi.sh
+  api/         网络与解析：BilibiliResolver、DtkClient/dtk_mapper、DownloaderApi 路由
+  pages/       页面：main_page、result_page、home/downloads/settings 三个 *_view、登录页
+  stores/      provider + ChangeNotifier：DownloaderStore、AuthStore、SettingsStore、MainTabController
+  utils/       下载器、格式化、图片请求头、WebView Cookie 通道
+  viewmodels/  ParsedSource / MediaPart / MediaStream、DownloadTask
+  components/  可复用组件（如剪贴板弹窗）
+  constants/   AppConstants（相册名、prefs key、构建期 DTK 配置）
+  theme/       颜色种子与圆角/间距令牌
+  routes/      Provider 注入与根 Widget
+test/          纯 Dart 单元测试（不依赖插件）
 ```
 
-## 依赖方向
+- 依赖方向：`pages -> stores -> api/utils -> viewmodels`。页面不直接发网络请求，解析/下载意图统一走 `DownloaderStore`。
+- 跨层失败用 `Result<T>`（`Ok`/`Err`）返回，异常不逃出数据层；文案在 `AppError.message` 面向用户。
+- 下载状态机：`DownloadStatus` + `DownloadTask`；同一任务同一时刻只允许一个运行（`_running` 串行化），进度与取消令牌按运行归属回写。
 
-- `presentation -> domain <- data`；`domain` 不得 import Flutter、dart:io 或 FFI。
-- FFI 只允许出现在 `lib/ffi/` 与 `features/*/data/datasources/`，widget 与 controller 不得直接调用。
-- 所有跨层对象都是不可变模型；DTO 与 entity 之间显式映射。
+## 添加依赖
+
+- 一律用 `flutter pub add <包名>` / `flutter pub remove <包名>`，**禁止手写版本号**；锁文件随命令更新。
+- 不引入需要维护生成代码的库；当前没有 freezed/json_serializable 产物。
 
 ## 状态管理
 
-- 使用 **provider**（package:provider）+ `ChangeNotifier`。
-- 每个功能页面对应一个 controller，通过 `ChangeNotifierProvider` 暴露。
-- Widget 不得直接改 controller 状态，只能调用 controller 的意图方法。
+- 使用 **provider** + `ChangeNotifier`；每个 store 暴露只读 getter 与意图方法，Widget 不改内部状态。
+- Provider 只能读取**祖先** Provider；跨 Provider 传依赖用「持有实例 + `ChangeNotifierProvider.value`」。
 
-## 错误处理
+## 下载与文件
 
-- data/domain 返回 `Result<T>`（`Ok`/`Err`），异常不得抛到 UI。
-- controller 负责把 `Err` 转成可见状态与用户可读文案。
+- 多连接 Range 分片 + 视频/音频并行；服务端不支持 Range 时回退单连接。
+- 暂停/失败保留 `clipkeep_*_{taskId}.m4s` 与 `.partN` 供续传；删除记录时由 `DownloaderApi.cleanup(taskId)` 清理。
+- 进度：下载 0~90%，合并 90~100%；合并阶段通过 `FFmpegKit.cancel` 响应暂停。
+- 成品保存：相册走 `Gal`；关闭相册走原生 `clipkeep/media_store` 的 `saveFile`。Android 10+ 用 MediaStore 写系统 `Download/ClipKeep`，Android 7~9 写公有下载目录后触发媒体扫描；复制在原生单线程执行，避免阻塞主线程。
+- 删除记录**不删成品**；临时文件清理需在确认弹窗文案中说明。
 
-## 并发
+## 网络与凭据
 
-- 原生与网络工作全部离开 UI 线程。FFI 调用统一走 `BdlService`（内部用 `Isolate.run`）。
+- Cookie 只发给 B 站域名（`_isBiliHost` 按 host 后缀匹配），图片按来源选头（`imageHeadersFor`）。
+- DTK 地址与 Key 只通过构建期 `--dart-define`（CI Secrets）注入，不入库、不写日志、不写提交信息。
+- WebView Cookie 的读取/清理由 `clipkeep/webview_cookie` 通道负责；退出登录必须同时清 CookieManager。
 
-## 生成代码
+## 验证
 
-- `.g.dart` / `.freezed.dart` 提交入库，CI 不必运行 build_runner。需要重新生成时执行 `dart run build_runner build --delete-conflicting-outputs`。
+- 每次改动跑 **`flutter analyze`** 与 **`flutter test test/unit_test.dart`**（纯 Dart、无插件依赖），保持零告警、测试通过；CI 同样执行这两步。
+- 涉及原生代码时再跑 `android/gradlew :app:compileDebugKotlin`。
+- 真机由用户安装 CI 产物验证；静态检查通过不等于功能可用。
 
 ## 文档
 
-- 所有 markdown 文档一律使用中文。
+- 所有文档、注释、提交信息使用中文。
+- README 记录构建方式、已知限制与许可证；本文件记录结构约束，避免与代码漂移。
 
-## Android
+## Git
 
-- minSdk = 24（`ffmpeg_kit_flutter_new` 的硬性要求）。
-- 原生 FFI 库 `libbdl_ffi.so` 不入库，由 `tool/fetch_ffi.*` 从 bdl 的 `ffi` release 下载并校验。
-- ABI：arm64-v8a、armeabi-v7a、x86_64。
-- 签名：keystore 与 `key.properties` 不入库；本机放 `android/key.properties`，CI 从 GitHub Secrets 还原。
-
-## 新增一个功能
-
-1. 建 `features/<名称>/{domain,data,presentation}`。
-2. 定义 domain entity、repository 接口与 usecase。
-3. 在 `data` 里实现 DTO/datasource/repository。
-4. 加 `ChangeNotifier` controller、页面与路由。
-5. 为 domain/usecase 补单元测试；跑 `flutter analyze` 与 `flutter test`。
+- 首行 `<type>(<scope>): 一句话`；正文用 2 空格缩进的 `- ` 列表，说明为什么。
+- 一个提交只做一件事；提交信息与文档中不得出现服务器地址、API Key、Cookie 等敏感信息。

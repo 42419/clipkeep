@@ -53,6 +53,9 @@ jobs:
       - name: Analyze
         run: flutter analyze
 
+      - name: Test
+        run: flutter test test/unit_test.dart
+
       - name: Build release APKs (split per ABI)
         env:
           DTK_BASE_URL: ${{ secrets.DTK_BASE_URL }}

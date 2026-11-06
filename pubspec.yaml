@@ -1,5 +1,5 @@
 name: clipkeep
-description: "A new Flutter project."
+description: "Android 端哔哩哔哩 / 抖音视频下载工具。"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -31,19 +31,13 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # The following adds the Cupertino Icons font to your application.
-  # Use with the CupertinoIcons class for iOS style icons.
-  cupertino_icons: ^1.0.8
   provider: ^6.1.5+1
   dio: ^5.11.1
   crypto: ^3.0.3
   path_provider: ^2.1.6
   gal: ^2.3.3
-  freezed_annotation: ^3.1.0
-  json_annotation: ^4.12.0
   ffmpeg_kit_flutter_new: ^4.6.8
   material_3_expressive: ^1.2.0
-  dynamic_color: ^2.1.0
   material_ui: ^1.10.0
   font_awesome_flutter: ^11.0.0
   shared_preferences: ^2.5.6
@@ -59,20 +53,15 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
-  build_runner: ^2.17.1
-  freezed: ^4.0.3
-  json_serializable: ^6.15.2
-
-# For information on the generic Dart part of this file, see the
-# following page: https://dart.dev/tools/pub/pubspec
-
-# The following section is specific to Flutter packages.
 flutter:
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    - assets/licenses/GPL-3.0.txt
 
   # To add assets to your application, add an assets section, like this:
   # assets:
