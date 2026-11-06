@@ -2,16 +2,6 @@ import 'dart:math' as math;
 
 import '../viewmodels/parsed_source.dart';
 
-/// DTK 归一化记录无法转成当前下载模型时抛出（如图文/图集）。
-class DtkUnsupported implements Exception {
-  DtkUnsupported(this.message);
-
-  final String message;
-
-  @override
-  String toString() => message;
-}
-
 /// 抖音直链请求头（对齐 douyinDL 脚本：桌面 UA + Referer/Origin + Sec-Fetch）。
 const Map<String, String> _douyinHeaders = <String, String>{
   'user-agent':
@@ -28,7 +18,6 @@ const Map<String, String> _douyinHeaders = <String, String>{
 
 /// 把 DTK 的 Content JSON 映射成 App 的 [ParsedSource]（当前仅视频）。
 ParsedSource mapDtkContent(Map<String, dynamic> content) {
-  final String kind = (content['kind'] ?? '').toString().toLowerCase();
   final Map<String, dynamic> media = _asMap(content['media']);
   final Map<String, dynamic> author = _asMap(content['author']);
 
@@ -43,15 +32,8 @@ ParsedSource mapDtkContent(Map<String, dynamic> content) {
   final int durationMs = _asInt(content['duration_ms']);
   final String? publishDate = _formatDate(content['created_at']);
 
-  if (kind.isNotEmpty && kind != 'video') {
-    throw DtkUnsupported('暂不支持图文/图集作品，目前仅支持视频');
-  }
-
+  // 图文/图集没有视频流：不报错，返回带封面的来源，结果页自行隐藏下载按钮。
   final List<MediaStream> streams = _buildStreams(content, media);
-  final bool isVideo = kind.isEmpty || kind == 'video';
-  if (isVideo && streams.isEmpty) {
-    throw DtkUnsupported('该作品没有可下载的视频流');
-  }
   final MediaStream? primary = streams.isNotEmpty ? streams.first : null;
   int width = primary?.width ?? 0;
   int height = primary?.height ?? 0;
@@ -75,6 +57,7 @@ ParsedSource mapDtkContent(Map<String, dynamic> content) {
     publishDate: publishDate,
     authorAvatarUrl: avatar,
     platform: content['platform']?.toString() ?? 'douyin',
+    sourceUrl: webUrl.isNotEmpty ? webUrl : null,
     videoWidth: width,
     videoHeight: height,
     parts: streams.isEmpty

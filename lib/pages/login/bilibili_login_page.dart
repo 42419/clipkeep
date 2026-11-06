@@ -9,6 +9,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../stores/auth_store.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/webview_cookies.dart';
 
 /// 哔哩哔哩登录页：官方 WebView 加载 H5 登录页，原生 CookieManager 读取 Cookie。
 class BilibiliLoginPage extends StatefulWidget {
@@ -47,6 +48,7 @@ class _BilibiliLoginPageState extends State<BilibiliLoginPage> {
   String _currentUrl = BilibiliLoginPage.loginUrl;
   String? _cookie;
   bool _detected = false;
+  bool _pageReady = false;
   bool _saving = false;
   bool _canGoBack = false;
   bool _canGoForward = false;
@@ -72,13 +74,27 @@ class _BilibiliLoginPageState extends State<BilibiliLoginPage> {
             unawaited(_checkCookies());
           },
         ),
-      )
-      ..loadRequest(Uri.parse(BilibiliLoginPage.loginUrl));
+      );
+    // 先清掉旧的 WebView Cookie，否则旧会话会被立刻检测到，无法切换账号。
+    unawaited(_loadLoginPage());
     _poll = Timer.periodic(const Duration(seconds: 1), (_) {
       unawaited(_syncUrl());
       unawaited(_syncNavigation());
       unawaited(_checkCookies());
     });
+  }
+
+  Future<void> _loadLoginPage() async {
+    await clearWebViewCookies();
+    if (!mounted) {
+      return;
+    }
+    await _web.loadRequest(Uri.parse(BilibiliLoginPage.loginUrl));
+    if (!mounted) {
+      return;
+    }
+    // 清理完成前不检测 Cookie，否则可能把上一次会话当成刚登录。
+    _pageReady = true;
   }
 
   Future<void> _syncNavigation() async {
@@ -120,7 +136,7 @@ class _BilibiliLoginPageState extends State<BilibiliLoginPage> {
   }
 
   Future<void> _checkCookies() async {
-    if (!mounted || _detected) {
+    if (!mounted || _detected || !_pageReady) {
       return;
     }
     final Map<String, String> cookies = await _collectCookies();

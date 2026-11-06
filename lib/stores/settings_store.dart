@@ -29,7 +29,8 @@ class SettingsStore extends ChangeNotifier {
       _saveToGallery = prefs.getBool(AppConstants.prefSaveToGallery) ?? true;
       _dynamicColor = prefs.getBool(AppConstants.prefDynamicColor) ?? true;
       final String? base = prefs.getString(AppConstants.prefDtkBaseUrl);
-      if (base != null && base.trim().isNotEmpty) {
+      // 空串是用户主动清空的结果，不能回退到内置默认值。
+      if (base != null) {
         _dtkBaseUrl = base;
       }
     } catch (_) {
@@ -39,7 +40,8 @@ class SettingsStore extends ChangeNotifier {
       final String? storedKey = await _storage.read(
         key: AppConstants.secureDtkApiKey,
       );
-      if (storedKey != null && storedKey.isNotEmpty) {
+      // 同上：空串表示已清空，不能把内置 Key 又填回来。
+      if (storedKey != null) {
         _dtkApiKey = storedKey;
       }
     } catch (_) {

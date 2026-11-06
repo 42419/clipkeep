@@ -9,6 +9,7 @@ class ParsedSource {
     this.ownerMid,
     this.authorAvatarUrl,
     this.platform = 'bilibili',
+    this.sourceUrl,
     this.videoWidth,
     this.videoHeight,
   });
@@ -23,6 +24,9 @@ class ParsedSource {
 
   /// 来源平台：bilibili / douyin / tiktok。
   final String platform;
+
+  /// 可重新解析的原始页面地址（B 站为视频页，抖音为 web_url），用于历史记录重解析。
+  final String? sourceUrl;
 
   /// 视频像素宽高（用于横竖屏判断与封面比例），未知为 null。
   final int? videoWidth;

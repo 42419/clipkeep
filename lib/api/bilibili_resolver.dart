@@ -160,6 +160,9 @@ class BilibiliResolver {
     }
 
     final int? pubdate = (detail['pubdate'] as num?)?.toInt();
+    final String? sourceUrl = bvid != null
+        ? 'https://www.bilibili.com/video/$bvid'
+        : (aid != null ? 'https://www.bilibili.com/video/av$aid' : null);
     return ParsedSource(
       title: (detail['title'] as String?) ?? '未知标题',
       author: (owner?['name'] as String?) ?? '',
@@ -167,6 +170,7 @@ class BilibiliResolver {
       publishDate: pubdate == null ? null : _formatDate(pubdate),
       ownerMid: (owner?['mid'] as num?)?.toInt(),
       authorAvatarUrl: owner?['face'] as String?,
+      sourceUrl: sourceUrl,
       parts: parts,
     );
   }

@@ -68,8 +68,6 @@ class DtkClient {
         refresh: false,
       );
       return await _resolveTask(first);
-    } on DtkUnsupported catch (e) {
-      return Err(AppError(e.message, cause: e));
     } on DtkException catch (e) {
       return Err(AppError(e.message, cause: e));
     } catch (e) {
@@ -93,8 +91,6 @@ class DtkClient {
         return Ok(parts.first.streams);
       }
       return Err((mapped as Err<ParsedSource>).error);
-    } on DtkUnsupported catch (e) {
-      return Err(AppError(e.message, cause: e));
     } on DtkException catch (e) {
       return Err(AppError(e.message, cause: e));
     } catch (e) {
@@ -131,14 +127,21 @@ class DtkClient {
         return const Err(AppError('请求过于频繁（触发限流）'));
       }
       final dynamic body = resp.data;
-      if (body is Map) {
-        final Map<String, dynamic> envelope = Map<String, dynamic>.from(body);
-        if (status >= 500) {
-          return Err(AppError(_envelopeError(envelope)));
-        }
-        // 能拿到标准信封即说明地址与 Key 可用（业务错误如 INVALID_URL 不算失败）。
-        return const Ok('连接正常');
+      if (body is! Map) {
+        return Err(AppError('服务返回非 JSON 响应（HTTP $status），请确认地址指向 DTK API'));
       }
+      final Map<String, dynamic> envelope = Map<String, dynamic>.from(body);
+      final bool looksLikeEnvelope =
+          envelope.containsKey('success') ||
+          envelope.containsKey('data') ||
+          envelope.containsKey('error');
+      if (!looksLikeEnvelope) {
+        return Err(AppError('服务返回格式不匹配（HTTP $status）'));
+      }
+      if (status >= 500) {
+        return Err(AppError(_envelopeError(envelope)));
+      }
+      // 能拿到标准信封即说明地址与 Key 可用（业务错误如 INVALID_URL 不算失败）。
       return const Ok('连接正常');
     } on DioException catch (e) {
       return Err(AppError('连接失败：${_dioMessage(e)}'));
@@ -179,9 +182,8 @@ class DtkClient {
   }
 
   bool _isContent(Map<String, dynamic> map) {
-    return map.containsKey('content_id') ||
-        map.containsKey('media') ||
-        map.containsKey('platform');
+    // 任务对象只有 task_id/state/endpoint 等字段；不要把带 platform 的任务误当内容。
+    return map.containsKey('content_id') || map.containsKey('media');
   }
 
   Future<Map<String, dynamic>> _submitParse(

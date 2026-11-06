@@ -4,6 +4,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../utils/webview_cookies.dart';
+
 /// 哔哩哔哩账号资料。
 class BiliProfile {
   const BiliProfile({
@@ -64,7 +66,15 @@ class AuthStore extends ChangeNotifier {
   String? get face => _face;
   int? get mid => _mid;
   bool get vip => _vip;
-  bool get isLoggedIn => _cookie != null && _cookie!.contains('SESSDATA=');
+
+  /// SESSDATA 里带过期时间；过期后不能再当作已登录展示。
+  bool get isExpired {
+    final DateTime? expires = _cookieExpiresAt;
+    return expires != null && !expires.isAfter(DateTime.now());
+  }
+
+  bool get isLoggedIn =>
+      _cookie != null && _cookie!.contains('SESSDATA=') && !isExpired;
 
   Future<void> load() async {
     try {
@@ -141,6 +151,9 @@ class AuthStore extends ChangeNotifier {
     } catch (_) {
       // 清理失败忽略。
     }
+    // 只清安全存储不够：WebView 的 CookieManager 仍保有 SESSDATA，
+    // 再进登录页会立刻检测到旧会话，导致无法切换账号。
+    await clearWebViewCookies();
     notifyListeners();
   }
 
