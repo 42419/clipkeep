@@ -33,6 +33,8 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   bool _openingResult = false;
   bool _prefsLoaded = false;
   bool _autoDetect = true;
+  final PageController _pageController = PageController();
+  MainTabController? _tabs;
 
   @override
   void initState() {
@@ -49,7 +51,32 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final MainTabController tabs = context.read<MainTabController>();
+    if (!identical(_tabs, tabs)) {
+      _tabs?.removeListener(_onTabChanged);
+      _tabs = tabs..addListener(_onTabChanged);
+    }
+  }
+
+  /// 底部导航切页用横向滑动，而不是瞬切。
+  void _onTabChanged() {
+    final int index = _tabs?.index ?? 0;
+    if (!_pageController.hasClients) {
+      return;
+    }
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 360),
+      curve: Curves.easeInOutCubicEmphasized,
+    );
+  }
+
+  @override
   void dispose() {
+    _tabs?.removeListener(_onTabChanged);
+    _pageController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -170,9 +197,14 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final MainTabController tab = context.watch<MainTabController>();
     return Scaffold(
-      body: IndexedStack(
-        index: tab.index,
-        children: const <Widget>[HomeView(), DownloadsView(), SettingsView()],
+      body: PageView(
+        controller: _pageController,
+        physics: const NeverScrollableScrollPhysics(),
+        children: const <Widget>[
+          _KeepAlivePage(child: HomeView()),
+          _KeepAlivePage(child: DownloadsView()),
+          _KeepAlivePage(child: SettingsView()),
+        ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: tab.index,
@@ -199,5 +231,27 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
         ],
       ),
     );
+  }
+}
+
+/// PageView 默认会销毁离屏页面；用 KeepAlive 保住各页的滚动位置与输入内容。
+class _KeepAlivePage extends StatefulWidget {
+  const _KeepAlivePage({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_KeepAlivePage> createState() => _KeepAlivePageState();
+}
+
+class _KeepAlivePageState extends State<_KeepAlivePage>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
   }
 }
