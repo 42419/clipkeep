@@ -272,16 +272,14 @@ class SettingsView extends StatelessWidget {
       ),
       child: Row(
         children: <Widget>[
-          Container(
-            width: 56,
+          const M3EShapeContainer(
+            kind: M3EShapeKind.cookie9Sided,
             height: 56,
-            decoration: const BoxDecoration(
-              color: Color(0xFF161823),
-              shape: BoxShape.circle,
-            ),
-            child: const Center(
-              child: Icon(
-                Icons.music_note_rounded,
+            width: 56,
+            color: Color(0xFF161823),
+            child: Center(
+              child: FaIcon(
+                FontAwesomeIcons.tiktok,
                 color: Colors.white,
                 size: 24,
               ),

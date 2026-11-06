@@ -203,7 +203,7 @@ class _PlatformInfo {
     if (douyin) {
       return const _PlatformInfo(
         '抖音视频',
-        FontAwesomeIcons.music,
+        FontAwesomeIcons.tiktok,
         Color(0xFF161823),
       );
     }
