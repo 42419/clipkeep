@@ -220,7 +220,7 @@ class _ResultPageState extends State<ResultPage> {
         const SizedBox(height: 16),
         _buildAuthor(theme, scheme, source),
         const SizedBox(height: 16),
-        _buildQuality(theme, scheme, part),
+        _buildQuality(theme, scheme, part, source.platform),
         const SizedBox(height: 16),
         _buildOptions(theme, scheme),
       ],
@@ -513,29 +513,30 @@ class _ResultPageState extends State<ResultPage> {
     );
   }
 
-  List<MediaStream> _videoStreams(MediaPart? part) {
+  List<MediaStream> _videoStreams(MediaPart? part, String platform) {
     if (part == null) {
       return const <MediaStream>[];
     }
-    // 同一画质会有 avc/hevc/av1 多条流，抖音还可能有同分辨率多码率：
-    // 按钮按显示标签去重，优先 avc，其次码率/大小更大的一条，
-    // 保证「看到哪一档就下哪一档」，不出现重复按钮。
+    final List<MediaStream> videos = part.streams
+        .where(
+          (MediaStream s) =>
+              s.isVideo && s.quality > 0 && s.primaryUrl.isNotEmpty,
+        )
+        .toList();
+    if (platform == 'douyin') {
+      // 抖音同一分辨率有多档码率，全部保留（水印流已在 mapper 过滤）。
+      videos.sort(
+        (MediaStream a, MediaStream b) => b.quality.compareTo(a.quality),
+      );
+      return videos;
+    }
+    // B 站同一画质有 avc/hevc/av1 多条流，只保留一条并优先 avc，
+    // 与 pickVideoQuality 的实际选择保持一致。
     final Map<String, MediaStream> byLabel = <String, MediaStream>{};
-    int weight(MediaStream s) => s.bitrate ?? s.sizeBytes ?? 0;
-    for (final MediaStream s in part.streams) {
-      if (!s.isVideo || s.quality <= 0 || s.primaryUrl.isEmpty) {
-        continue;
-      }
-      final String label = s.displayLabel;
-      final MediaStream? existing = byLabel[label];
-      if (existing == null) {
-        byLabel[label] = s;
-        continue;
-      }
-      if (existing.codec != 'avc' && s.codec == 'avc') {
-        byLabel[label] = s;
-      } else if (existing.codec == s.codec && weight(s) > weight(existing)) {
-        byLabel[label] = s;
+    for (final MediaStream s in videos) {
+      final MediaStream? existing = byLabel[s.displayLabel];
+      if (existing == null || (existing.codec != 'avc' && s.codec == 'avc')) {
+        byLabel[s.displayLabel] = s;
       }
     }
     final List<MediaStream> list = byLabel.values.toList();
@@ -543,12 +544,24 @@ class _ResultPageState extends State<ResultPage> {
     return list;
   }
 
-  MediaStream? _selectedStream(MediaPart? part) {
-    final List<MediaStream> list = _videoStreams(part);
+  MediaStream? _selectedStream(MediaPart? part, String platform) {
+    final List<MediaStream> list = _videoStreams(part, platform);
     if (list.isEmpty) {
       return null;
     }
     return list[_qualityIndex.clamp(0, list.length - 1)];
+  }
+
+  /// 抖音按钮带码率，区分同分辨率的不同档位；B 站保持纯画质标签。
+  String _qualityButtonLabel(MediaStream stream, String platform) {
+    final int? bps = stream.bitrate;
+    if (platform != 'douyin' || bps == null || bps <= 0) {
+      return stream.displayLabel;
+    }
+    final String bitrate = bps >= 1000000
+        ? '${(bps / 1000000).toStringAsFixed(2)}M'
+        : '${(bps / 1000).round()}K';
+    return '${stream.displayLabel} · $bitrate';
   }
 
   /// 依据带宽与时长估算文件大小（约 xx MB）。
@@ -565,8 +578,13 @@ class _ResultPageState extends State<ResultPage> {
     return '约 ${mb.toStringAsFixed(1)} MB';
   }
 
-  Widget _buildQuality(ThemeData theme, ColorScheme scheme, MediaPart? part) {
-    final List<MediaStream> streams = _videoStreams(part);
+  Widget _buildQuality(
+    ThemeData theme,
+    ColorScheme scheme,
+    MediaPart? part,
+    String platform,
+  ) {
+    final List<MediaStream> streams = _videoStreams(part, platform);
     final int selected = streams.isEmpty
         ? 0
         : _qualityIndex.clamp(0, streams.length - 1);
@@ -603,10 +621,10 @@ class _ResultPageState extends State<ResultPage> {
             actions: <M3EButtonGroupAction>[
               for (final MediaStream s in streams)
                 M3EButtonGroupAction(
-                  label: Text(s.displayLabel),
+                  label: Text(_qualityButtonLabel(s, platform)),
                   tooltip: s.detailText.isEmpty
-                      ? s.displayLabel
-                      : '${s.displayLabel} · ${s.detailText}',
+                      ? _qualityButtonLabel(s, platform)
+                      : '${_qualityButtonLabel(s, platform)} · ${s.detailText}',
                 ),
             ],
           ),
@@ -619,39 +637,13 @@ class _ResultPageState extends State<ResultPage> {
             ),
           )
         else
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              for (int i = 0; i < streams.length; i++)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 5),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      SizedBox(
-                        width: 60,
-                        child: Text(
-                          streams[i].displayLabel,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            color: i == selected
-                                ? scheme.primary
-                                : scheme.onSurface,
-                          ),
-                        ),
-                      ),
-                      Expanded(
-                        child: Text(
-                          _streamDetailText(streams[i], part),
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
+          Text(
+            '${streams[selected].displayLabel} · '
+            '${_streamDetailText(streams[selected], part)}',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+              fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+            ),
           ),
       ],
     );
@@ -670,8 +662,6 @@ class _ResultPageState extends State<ResultPage> {
   }
 
   Widget _buildOptions(ThemeData theme, ColorScheme scheme) {
-    final String platformName =
-        context.read<DownloaderStore>().source?.platformLabel ?? '视频';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -686,14 +676,6 @@ class _ResultPageState extends State<ResultPage> {
           spacing: 8,
           runSpacing: 8,
           children: <Widget>[
-            _optionChip(
-              theme,
-              scheme,
-              label: '无水印',
-              icon: Icons.check,
-              selected: true,
-              onTap: () => _notify('$platformName视频本身无水印'),
-            ),
             _optionChip(
               theme,
               scheme,
@@ -861,7 +843,10 @@ class _ResultPageState extends State<ResultPage> {
   Future<void> _startDownload(BuildContext context, MediaPart part) async {
     final store = context.read<DownloaderStore>();
     final messenger = ScaffoldMessenger.of(context);
-    final MediaStream? selected = _selectedStream(part);
+    final MediaStream? selected = _selectedStream(
+      part,
+      store.source?.platform ?? '',
+    );
     final int? quality = selected?.quality;
     final String qualityText = selected?.displayLabel ?? '视频';
     final String qLabel = _audioOnly
@@ -886,12 +871,6 @@ class _ResultPageState extends State<ResultPage> {
     setState(() => _activeTaskId = task.id);
     messenger.clearSnackBars();
     messenger.showSnackBar(const SnackBar(content: Text('已开始下载，可在「下载」页查看进度')));
-  }
-
-  void _notify(String message) {
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.clearSnackBars();
-    messenger.showSnackBar(SnackBar(content: Text(message)));
   }
 
   String _formatDuration(int? seconds) {
