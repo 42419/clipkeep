@@ -308,6 +308,166 @@ class MediaDownloader {
     return Ok(coverSaved ? '已保存视频与封面到相册（ClipKeep）' : '已保存到相册（ClipKeep）');
   }
 
+  /// 保存图文/图集：每张图片单独落盘，实况图额外保存关联短视频。
+  Future<Result<String>> saveImages(
+    List<MediaImage> images, {
+    int? onlyIndex,
+    String? downloadId,
+    void Function(DownloadProgress progress)? onProgress,
+  }) async {
+    if (images.isEmpty) {
+      return const Err(AppError('没有可保存的图片'));
+    }
+    final int target = onlyIndex?.clamp(0, images.length - 1) ?? -1;
+    final List<MediaImage> queue = onlyIndex == null
+        ? images
+        : <MediaImage>[images[target]];
+
+    bool saveToGallery = true;
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      saveToGallery = prefs.getBool(AppConstants.prefSaveToGallery) ?? true;
+    } catch (_) {
+      // 读取失败默认保存到相册。
+    }
+    if (saveToGallery && !await _ensureGalleryAccess()) {
+      return const Err(AppError('没有相册写入权限'));
+    }
+
+    final Directory dir =
+        await getExternalStorageDirectory() ??
+        await getApplicationDocumentsDirectory();
+    final String stamp =
+        downloadId ?? DateTime.now().millisecondsSinceEpoch.toString();
+    int savedImages = 0;
+    int savedVideos = 0;
+
+    for (int i = 0; i < queue.length; i++) {
+      final MediaImage image = queue[i];
+      final int displayIndex = onlyIndex == null ? i : target;
+      final String ext = _imageExt(image.primaryUrl);
+      final String tempImage = '${dir.path}/clipkeep_img_${stamp}_$i.$ext';
+      final String displayName = 'ClipKeep_${stamp}_${displayIndex + 1}.$ext';
+      String? tempVideo;
+      try {
+        await _downloadFile(
+          image.urls,
+          tempImage,
+          (String url) => imageHeadersFor(url),
+        );
+        if (saveToGallery) {
+          await Gal.putImage(tempImage, album: AppConstants.albumName);
+        } else {
+          final String? saved = await _saveToDownloads(
+            tempImage,
+            displayName,
+            _imageMime(ext),
+          );
+          if (saved == null) {
+            return Err(AppError('保存第 ${displayIndex + 1} 张图片到下载目录失败'));
+          }
+        }
+        savedImages++;
+
+        final MediaStream? live = image.liveVideo;
+        if (live != null && live.primaryUrl.isNotEmpty) {
+          tempVideo = '${dir.path}/clipkeep_live_${stamp}_$i.mp4';
+          await _downloadFile(live.urls, tempVideo, (_) => live.headers);
+          if (saveToGallery) {
+            await Gal.putVideo(tempVideo, album: AppConstants.albumName);
+          } else {
+            final String? saved = await _saveToDownloads(
+              tempVideo,
+              'ClipKeep_${stamp}_${displayIndex + 1}_live.mp4',
+              'video/mp4',
+            );
+            if (saved == null) {
+              return Err(AppError('保存第 ${displayIndex + 1} 张的实况视频到下载目录失败'));
+            }
+          }
+          savedVideos++;
+        }
+
+        onProgress?.call(
+          DownloadProgress(
+            fraction: (i + 1) / queue.length,
+            phase: '正在保存 ${i + 1}/${queue.length}…',
+          ),
+        );
+      } catch (e) {
+        return Err(
+          AppError('保存第 ${displayIndex + 1} 张图片失败：${_describe(e)}', cause: e),
+        );
+      } finally {
+        await _cleanupQuietly(<String>[tempImage, ?tempVideo]);
+      }
+    }
+
+    final String where = saveToGallery
+        ? '相册（${AppConstants.albumName}）'
+        : 'Download/ClipKeep';
+    final String videos = savedVideos > 0 ? '、$savedVideos 个实况视频' : '';
+    return Ok('已保存 $savedImages 张图片$videos到$where');
+  }
+
+  Future<void> _downloadFile(
+    List<String> urls,
+    String path,
+    Map<String, String> Function(String url) headersOf,
+  ) async {
+    Object? last;
+    for (final String url in urls) {
+      try {
+        await _dio.download(
+          url,
+          path,
+          options: Options(
+            headers: headersOf(url),
+            receiveTimeout: const Duration(minutes: 2),
+          ),
+          deleteOnError: true,
+        );
+        return;
+      } catch (e) {
+        last = e;
+        await _cleanupQuietly(<String>[path]);
+      }
+    }
+    throw last ?? Exception('没有可用的下载地址');
+  }
+
+  String _imageExt(String url) {
+    final String path = Uri.tryParse(url)?.path.toLowerCase() ?? '';
+    for (final String ext in <String>[
+      'webp',
+      'jpg',
+      'jpeg',
+      'png',
+      'gif',
+      'heic',
+    ]) {
+      if (path.endsWith('.$ext')) {
+        return ext == 'jpeg' ? 'jpg' : ext;
+      }
+    }
+    return 'jpg';
+  }
+
+  String _imageMime(String ext) {
+    switch (ext) {
+      case 'webp':
+        return 'image/webp';
+      case 'png':
+        return 'image/png';
+      case 'gif':
+        return 'image/gif';
+      case 'heic':
+        return 'image/heic';
+      default:
+        return 'image/jpeg';
+    }
+  }
+
   Future<Result<String>> _downloadAudioOnly(
     MediaPart part,
     String dirPath,

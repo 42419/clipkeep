@@ -9,6 +9,7 @@ import 'package:soft_edge_blur/soft_edge_blur.dart';
 
 import '../stores/downloader_store.dart';
 import '../utils/image_headers.dart';
+import '../utils/result.dart';
 import '../theme/app_theme.dart';
 import '../viewmodels/download_task.dart';
 import '../viewmodels/parsed_source.dart';
@@ -27,6 +28,17 @@ class _ResultPageState extends State<ResultPage> {
   bool _coverOnly = false;
   bool _videoWithCover = false;
   String? _activeTaskId;
+  final PageController _imagePageController = PageController();
+  int _imageIndex = 0;
+  bool _imageSaving = false;
+  double _imageProgress = 0;
+  String? _imagePhase;
+
+  @override
+  void dispose() {
+    _imagePageController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -91,6 +103,11 @@ class _ResultPageState extends State<ResultPage> {
                           ? KeyedSubtree(
                               key: const ValueKey<String>('error'),
                               child: _buildError(theme, scheme, store),
+                            )
+                          : source.isImageAlbum
+                          ? KeyedSubtree(
+                              key: const ValueKey<String>('album'),
+                              child: _buildAlbum(theme, scheme, source),
                             )
                           : KeyedSubtree(
                               key: const ValueKey<String>('content'),
@@ -201,6 +218,319 @@ class _ResultPageState extends State<ResultPage> {
   }
 
   // ---------- 内容 ----------
+  Widget _buildAlbum(ThemeData theme, ColorScheme scheme, ParsedSource source) {
+    final List<MediaImage> images = source.images;
+    final int index = _imageIndex.clamp(0, images.length - 1);
+    return ListView(
+      padding: EdgeInsets.fromLTRB(
+        16,
+        8,
+        16,
+        24 + M3ESafeArea.bottomOf(context),
+      ),
+      children: <Widget>[
+        _buildImageGallery(theme, scheme, source, index),
+        const SizedBox(height: 16),
+        Text(
+          source.title,
+          style: theme.textTheme.headlineSmall?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 12),
+        _buildAuthor(theme, scheme, source),
+        const SizedBox(height: 16),
+        _buildImageActions(theme, scheme, source, index),
+      ],
+    );
+  }
+
+  Widget _buildImageGallery(
+    ThemeData theme,
+    ColorScheme scheme,
+    ParsedSource source,
+    int index,
+  ) {
+    final List<MediaImage> images = source.images;
+    final MediaImage current = images[index];
+    return Column(
+      children: <Widget>[
+        Container(
+          height: 380,
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              PageView.builder(
+                controller: _imagePageController,
+                itemCount: images.length,
+                onPageChanged: (int value) {
+                  if (mounted) {
+                    setState(() => _imageIndex = value);
+                  }
+                },
+                itemBuilder: (BuildContext context, int i) {
+                  return _albumImage(images[i], scheme, fit: BoxFit.contain);
+                },
+              ),
+              Positioned(
+                top: 12,
+                right: 12,
+                child: _galleryBadge('${index + 1} / ${images.length}', scheme),
+              ),
+              if (current.isLive)
+                Positioned(
+                  top: 12,
+                  left: 12,
+                  child: _galleryBadge(
+                    '实况',
+                    scheme,
+                    icon: Icons.play_circle_fill_rounded,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        if (images.length > 1) ...<Widget>[
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 60,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: images.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (BuildContext context, int i) {
+                final bool selected = i == index;
+                return GestureDetector(
+                  onTap: () {
+                    _imagePageController.animateToPage(
+                      i,
+                      duration: const Duration(milliseconds: 240),
+                      curve: Curves.easeOutCubic,
+                    );
+                    setState(() => _imageIndex = i);
+                  },
+                  child: Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: selected
+                            ? scheme.primary
+                            : scheme.outlineVariant,
+                        width: selected ? 2 : 1,
+                      ),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: _albumImage(
+                      images[i],
+                      scheme,
+                      fit: BoxFit.cover,
+                      cacheWidth: 140,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _albumImage(
+    MediaImage image,
+    ColorScheme scheme, {
+    required BoxFit fit,
+    int? cacheWidth,
+  }) {
+    final String? url = _normalizeUrl(image.primaryUrl);
+    if (url == null) {
+      return ColoredBox(
+        color: scheme.surfaceContainerHighest,
+        child: Icon(Icons.image_outlined, color: scheme.onSurfaceVariant),
+      );
+    }
+    return Image.network(
+      url,
+      headers: imageHeadersFor(url),
+      fit: fit,
+      cacheWidth: cacheWidth,
+      loadingBuilder:
+          (BuildContext context, Widget child, ImageChunkEvent? progress) {
+            if (progress == null) {
+              return child;
+            }
+            return ColoredBox(
+              color: scheme.surfaceContainerHighest,
+              child: const Center(
+                child: M3EProgressIndicator.circular(size: 22),
+              ),
+            );
+          },
+      errorBuilder: (BuildContext context, Object error, StackTrace? stack) {
+        return ColoredBox(
+          color: scheme.surfaceContainerHighest,
+          child: Icon(
+            Icons.broken_image_outlined,
+            color: scheme.onSurfaceVariant,
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _galleryBadge(String text, ColorScheme scheme, {IconData? icon}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.58),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (icon != null) ...<Widget>[
+            Icon(icon, size: 14, color: Colors.white),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            text,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              fontFeatures: <FontFeature>[FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildImageActions(
+    ThemeData theme,
+    ColorScheme scheme,
+    ParsedSource source,
+    int index,
+  ) {
+    final List<MediaImage> images = source.images;
+    final MediaImage current = images[index];
+    final bool anyLive = images.any((MediaImage image) => image.isLive);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        if (_imageSaving) ...<Widget>[
+          M3EProgressIndicator.linearWavy(value: _imageProgress),
+          const SizedBox(height: 6),
+          Text(
+            _imagePhase ?? '正在保存…',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: M3EButton.filled(
+                onPressed: _imageSaving
+                    ? null
+                    : () => _saveAlbum(context, source, onlyIndex: index),
+                size: M3EButtonSize.md,
+                icon: const Icon(Icons.download_rounded),
+                label: Text(
+                  _imageSaving
+                      ? '保存中…'
+                      : current.isLive
+                      ? '保存实况'
+                      : '保存这张',
+                ),
+                tooltip: current.isLive ? '保存图片和实况视频' : '保存这张图片',
+              ),
+            ),
+            if (images.length > 1) ...<Widget>[
+              const SizedBox(width: 10),
+              Expanded(
+                child: M3EButton.text(
+                  onPressed: _imageSaving
+                      ? null
+                      : () => _saveAlbum(context, source),
+                  size: M3EButtonSize.md,
+                  tooltip: '保存全部图片',
+                  child: Text('保存全部 ${images.length} 张'),
+                ),
+              ),
+            ],
+          ],
+        ),
+        if (anyLive) ...<Widget>[
+          const SizedBox(height: 8),
+          Text(
+            '实况图会同时保存图片与关联短视频',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Future<void> _saveAlbum(
+    BuildContext context,
+    ParsedSource source, {
+    int? onlyIndex,
+  }) async {
+    if (_imageSaving) {
+      return;
+    }
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    setState(() {
+      _imageSaving = true;
+      _imageProgress = 0;
+      _imagePhase = '正在准备…';
+    });
+    Result<String> result;
+    try {
+      result = await context.read<DownloaderStore>().saveImages(
+        source,
+        onlyIndex: onlyIndex,
+        onProgress: (DownloadProgress progress) {
+          if (!mounted) {
+            return;
+          }
+          setState(() {
+            _imageProgress = progress.fraction;
+            _imagePhase = progress.phase;
+          });
+        },
+      );
+    } catch (e) {
+      result = Err<String>(AppError('保存图片失败：$e', cause: e));
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _imageSaving = false;
+      _imageProgress = 0;
+      _imagePhase = null;
+    });
+    messenger.clearSnackBars();
+    if (result is Ok<String>) {
+      messenger.showSnackBar(SnackBar(content: Text(result.value)));
+    } else if (result is Err<String>) {
+      messenger.showSnackBar(SnackBar(content: Text(result.error.message)));
+    }
+  }
+
   Widget _buildContent(
     ThemeData theme,
     ColorScheme scheme,

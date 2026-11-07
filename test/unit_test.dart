@@ -171,6 +171,119 @@ void main() {
     });
   });
 
+  group('图文映射', () {
+    Map<String, dynamic> album({
+      required List<Map<String, dynamic>> images,
+      String description = '测试图文',
+    }) {
+      return <String, dynamic>{
+        'kind': 'image_album',
+        'platform': 'douyin',
+        'content_id': '1234567890123456789',
+        'web_url': 'https://www.douyin.com/note/1234567890123456789',
+        'description': description,
+        'media': <String, dynamic>{
+          'covers': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'url': 'https://p3.douyinpic.com/cover.webp',
+              'width': 1080,
+              'height': 1920,
+            },
+          ],
+          'streams': <dynamic>[],
+          'images': images,
+        },
+      };
+    }
+
+    Map<String, dynamic> image({
+      int width = 1080,
+      int height = 1920,
+      Map<String, dynamic>? video,
+    }) {
+      return <String, dynamic>{
+        'url': 'https://p3.douyinpic.com/a.webp',
+        'urls': <String>[
+          'https://p3.douyinpic.com/a.webp',
+          'https://p9.douyinpic.com/a.webp',
+        ],
+        'width': width,
+        'height': height,
+        'video': ?video,
+      };
+    }
+
+    test('单张静态图按图集返回，不产生视频 part', () {
+      final ParsedSource source = mapDtkContent(
+        album(images: <Map<String, dynamic>>[image()]),
+      );
+      expect(source.isImageAlbum, isTrue);
+      expect(source.images, hasLength(1));
+      expect(source.images.first.isLive, isFalse);
+      expect(source.images.first.urls, hasLength(2));
+      expect(source.parts, isEmpty);
+      expect(source.videoWidth, 1080);
+      expect(source.videoHeight, 1920);
+    });
+
+    test('实况图保留关联视频与多镜像地址', () {
+      final ParsedSource source = mapDtkContent(
+        album(
+          images: <Map<String, dynamic>>[
+            image(
+              video: <String, dynamic>{
+                'url': 'https://v26.douyinvod.com/live.mp4',
+                'urls': <String>['https://v26.douyinvod.com/live.mp4'],
+                'width': 720,
+                'height': 1280,
+                'size_bytes': 249596,
+                'watermark': false,
+              },
+            ),
+          ],
+        ),
+      );
+      final MediaImage img = source.images.single;
+      expect(img.isLive, isTrue);
+      expect(img.liveVideo?.primaryUrl, contains('live.mp4'));
+      expect(img.liveVideo?.sizeBytes, 249596);
+      expect(img.liveVideo?.width, 720);
+    });
+
+    test('多图混合实况图数量正确', () {
+      final ParsedSource source = mapDtkContent(
+        album(
+          images: <Map<String, dynamic>>[
+            image(),
+            image(
+              video: <String, dynamic>{
+                'url': 'https://v26.douyinvod.com/live.mp4',
+                'width': 720,
+                'height': 1280,
+              },
+            ),
+            image(width: 1320, height: 2868),
+          ],
+        ),
+      );
+      expect(source.images, hasLength(3));
+      expect(source.images.where((MediaImage e) => e.isLive), hasLength(1));
+    });
+
+    test('长文案标题截断，但仍是单图图集', () {
+      final String longText = '这是一段很长的文字内容' * 12;
+      final Map<String, dynamic> content = album(
+        images: <Map<String, dynamic>>[image()],
+        description: longText,
+      );
+      content['title'] = longText;
+      final ParsedSource source = mapDtkContent(content);
+      expect(source.isImageAlbum, isTrue);
+      expect(source.title.endsWith('…'), isTrue);
+      expect(source.title.length, lessThanOrEqualTo(61));
+    });
+  });
+
   group('登录态工具', () {
     test('sanitizeCookie 只保留登录必需项', () {
       expect(

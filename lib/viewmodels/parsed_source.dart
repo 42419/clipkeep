@@ -1,10 +1,11 @@
-/// 解析后的 B 站来源，用于下载器页面。
+/// 解析后的作品来源（视频或图文/图集）。
 class ParsedSource {
   const ParsedSource({
     required this.title,
     required this.author,
     required this.coverUrl,
     required this.parts,
+    this.images = const <MediaImage>[],
     this.publishDate,
     this.ownerMid,
     this.authorAvatarUrl,
@@ -21,6 +22,9 @@ class ParsedSource {
   final int? ownerMid;
   final String? authorAvatarUrl;
   final List<MediaPart> parts;
+
+  /// 图文/图集图片；实况图的短视频挂在每张图的 liveVideo 上。
+  final List<MediaImage> images;
 
   /// 来源平台：bilibili / douyin / tiktok。
   final String platform;
@@ -58,6 +62,9 @@ class ParsedSource {
     return w > 0 && h > 0 && w > h * 1.05;
   }
 
+  /// 图文/图集（无视频流，只有图片）。
+  bool get isImageAlbum => images.isNotEmpty && parts.isEmpty;
+
   /// 封面宽高比，未知时按 16:9。
   double get aspectRatio {
     final int w = videoWidth ?? 0;
@@ -66,6 +73,37 @@ class ParsedSource {
       return w / h;
     }
     return 16 / 9;
+  }
+}
+
+/// 图文/图集中的一张图片；实况图额外带一段短视频。
+class MediaImage {
+  const MediaImage({
+    required this.urls,
+    this.width,
+    this.height,
+    this.liveVideo,
+  });
+
+  final List<String> urls;
+  final int? width;
+  final int? height;
+  final MediaStream? liveVideo;
+
+  String get primaryUrl => urls.isEmpty ? '' : urls.first;
+
+  bool get isLive => liveVideo != null && liveVideo!.primaryUrl.isNotEmpty;
+
+  String get sizeText =>
+      (width != null && height != null) ? '$width×$height' : '';
+
+  double get aspectRatio {
+    final int w = width ?? 0;
+    final int h = height ?? 0;
+    if (w > 0 && h > 0) {
+      return w / h;
+    }
+    return 3 / 4;
   }
 }
 

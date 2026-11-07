@@ -130,6 +130,45 @@ class DownloaderStore extends ChangeNotifier {
     return task;
   }
 
+  /// 保存图文/图集：直接落盘，完成后写入一条已完成记录。
+  Future<Result<String>> saveImages(
+    ParsedSource source, {
+    int? onlyIndex,
+    void Function(DownloadProgress progress)? onProgress,
+  }) async {
+    final String downloadId = 'img_${DateTime.now().microsecondsSinceEpoch}';
+    final int? index = onlyIndex?.clamp(0, source.images.length - 1);
+    final Result<String> result = await _api.saveImages(
+      source.images,
+      onlyIndex: index,
+      downloadId: downloadId,
+      onProgress: onProgress,
+    );
+    if (result is Ok<String>) {
+      final List<MediaImage> saved = index == null
+          ? source.images
+          : <MediaImage>[source.images[index]];
+      final int liveCount = saved.where((MediaImage e) => e.isLive).length;
+      final DownloadTask task = DownloadTask(
+        id: downloadId,
+        title: source.title,
+        platform: source.platformLabel,
+        qualityLabel:
+            '图文 · ${saved.length} 张${liveCount > 0 ? ' · $liveCount 实况' : ''}',
+        createdAt: DateTime.now(),
+        status: DownloadStatus.completed,
+        progress: 1,
+        coverUrl: saved.isNotEmpty ? saved.first.primaryUrl : source.coverUrl,
+        sourceUrl: source.sourceUrl,
+        savedMessage: result.value,
+      );
+      _tasks.insert(0, task);
+      notifyListeners();
+      unawaited(_persistCompleted());
+    }
+    return result;
+  }
+
   /// 启动一次下载运行。同一任务在同一时刻只允许一个运行，避免两次运行
   /// 同时向同一个临时文件追加数据、互相覆盖状态。
   void _startRun(DownloadTask task) {

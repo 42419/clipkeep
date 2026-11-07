@@ -22,9 +22,14 @@ ParsedSource mapDtkContent(Map<String, dynamic> content) {
   final Map<String, dynamic> author = _asMap(content['author']);
 
   final String rawTitle = content['title']?.toString().trim() ?? '';
-  final String title = rawTitle.isNotEmpty
-      ? rawTitle
-      : (content['description']?.toString() ?? '抖音作品');
+  final String description = content['description']?.toString().trim() ?? '';
+  // 图文/图集没有视频流：不报错，返回图片列表；实况图的视频挂在图片上。
+  final List<MediaImage> images = _buildImages(media);
+  final bool isAlbum =
+      content['kind']?.toString() == 'image_album' || images.isNotEmpty;
+  final String title = isAlbum
+      ? _shortTitle(rawTitle.isNotEmpty ? rawTitle : description)
+      : (rawTitle.isNotEmpty ? rawTitle : _shortTitle(description));
   final String authorName = author['nickname']?.toString() ?? '';
   final String? avatar = _imageUrl(_asMapOrNull(author['avatar']));
   final String? cover = _firstImageUrl(media['covers']);
@@ -32,18 +37,22 @@ ParsedSource mapDtkContent(Map<String, dynamic> content) {
   final int durationMs = _asInt(content['duration_ms']);
   final String? publishDate = _formatDate(content['created_at']);
 
-  // 图文/图集没有视频流：不报错，返回带封面的来源，结果页自行隐藏下载按钮。
   final List<MediaStream> streams = _buildStreams(content, media);
   final MediaStream? primary = streams.isNotEmpty ? streams.first : null;
   int width = primary?.width ?? 0;
   int height = primary?.height ?? 0;
   if (width == 0 || height == 0) {
-    // 图文/图集没有视频流时，用封面尺寸判断横竖屏。
-    final dynamic coverList = media['covers'];
-    if (coverList is List && coverList.isNotEmpty) {
-      final Map<String, dynamic> cover0 = _asMap(coverList.first);
-      width = _asInt(cover0['width']);
-      height = _asInt(cover0['height']);
+    // 图文/图集没有视频流时，用第一张图片/封面尺寸判断横竖屏。
+    final MediaImage? firstImage = images.isNotEmpty ? images.first : null;
+    width = firstImage?.width ?? 0;
+    height = firstImage?.height ?? 0;
+    if (width == 0 || height == 0) {
+      final dynamic coverList = media['covers'];
+      if (coverList is List && coverList.isNotEmpty) {
+        final Map<String, dynamic> cover0 = _asMap(coverList.first);
+        width = _asInt(cover0['width']);
+        height = _asInt(cover0['height']);
+      }
     }
   }
 
@@ -53,13 +62,14 @@ ParsedSource mapDtkContent(Map<String, dynamic> content) {
   return ParsedSource(
     title: title,
     author: authorName,
-    coverUrl: cover,
+    coverUrl: cover ?? (images.isNotEmpty ? images.first.primaryUrl : null),
     publishDate: publishDate,
     authorAvatarUrl: avatar,
     platform: content['platform']?.toString() ?? 'douyin',
     sourceUrl: webUrl.isNotEmpty ? webUrl : null,
     videoWidth: width,
     videoHeight: height,
+    images: images,
     parts: streams.isEmpty
         ? const <MediaPart>[]
         : <MediaPart>[
@@ -73,6 +83,94 @@ ParsedSource mapDtkContent(Map<String, dynamic> content) {
             ),
           ],
   );
+}
+
+/// 图文/图集标题只取正文首行并截断，避免长文案把结果页标题撑开。
+String _shortTitle(String description) {
+  final String line = description.split('\n').first.trim();
+  if (line.isEmpty) {
+    return '抖音作品';
+  }
+  return line.length <= 60 ? line : '${line.substring(0, 60)}…';
+}
+
+List<MediaImage> _buildImages(Map<String, dynamic> media) {
+  final dynamic list = media['images'];
+  if (list is! List) {
+    return const <MediaImage>[];
+  }
+  final List<MediaImage> out = <MediaImage>[];
+  for (final dynamic item in list) {
+    final Map<String, dynamic>? node = _asMapOrNull(item);
+    if (node == null) {
+      continue;
+    }
+    final List<String> urls = _imageUrls(node);
+    if (urls.isEmpty) {
+      continue;
+    }
+    out.add(
+      MediaImage(
+        urls: urls,
+        width: _asIntOrNull(node['width']),
+        height: _asIntOrNull(node['height']),
+        liveVideo: _liveVideo(node['video']),
+      ),
+    );
+  }
+  return out;
+}
+
+/// 实况图的视频：DTK 归一化后是 VideoStream，直接保留多镜像地址。
+MediaStream? _liveVideo(dynamic raw) {
+  final Map<String, dynamic>? node = _asMapOrNull(raw);
+  if (node == null || node['watermark'] == true) {
+    return null;
+  }
+  final List<String> urls = _streamUrls(node);
+  if (urls.isEmpty) {
+    return null;
+  }
+  final int width = _asInt(node['width']);
+  final int height = _asInt(node['height']);
+  return MediaStream(
+    kind: 'video',
+    quality: height > 0 ? height : 1,
+    codec: 'avc',
+    urls: urls,
+    headers: _douyinHeaders,
+    width: width > 0 ? width : null,
+    height: height > 0 ? height : null,
+    bitrate: _asIntOrNull(node['bitrate']),
+    sizeBytes: _asIntOrNull(node['size_bytes'] ?? node['data_size']),
+    resolutionLabel: height > 0 ? _resolutionLabel(height) : null,
+  );
+}
+
+List<String> _imageUrls(Map<String, dynamic> node) {
+  final List<String> out = <String>[];
+  void add(dynamic raw) {
+    final String url = raw?.toString().trim() ?? '';
+    if (url.startsWith('http') && !out.contains(url)) {
+      out.add(url);
+    }
+  }
+
+  add(node['url']);
+  final dynamic urls = node['urls'];
+  if (urls is List) {
+    for (final dynamic value in urls) {
+      add(value);
+    }
+  }
+  // 原始响应用的是 url_list；归一化缺失时也能回退。
+  final dynamic urlList = node['url_list'];
+  if (urlList is List) {
+    for (final dynamic value in urlList) {
+      add(value);
+    }
+  }
+  return out;
 }
 
 /// 多画质来源优先级：归一化 media.streams（数量最全）> 原始 bit_rate > media.video。
@@ -322,6 +420,16 @@ List<String> _streamUrls(Map<String, dynamic> item) {
   final dynamic list = item['urls'];
   if (list is List) {
     for (final dynamic value in list) {
+      final String url = value?.toString() ?? '';
+      if (url.isNotEmpty && !out.contains(url)) {
+        out.add(url);
+      }
+    }
+  }
+  // 原始抖音响应里是 url_list；DTK 归一化缺失时可回退。
+  final dynamic urlList = item['url_list'];
+  if (urlList is List) {
+    for (final dynamic value in urlList) {
       final String url = value?.toString() ?? '';
       if (url.isNotEmpty && !out.contains(url)) {
         out.add(url);

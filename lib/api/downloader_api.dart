@@ -191,6 +191,20 @@ class DownloaderApi {
   /// 删除某个任务的临时下载产物（源流/分片/合并结果）。
   Future<void> cleanup(String downloadId) => _media.cleanupTemp(downloadId);
 
+  Future<Result<String>> saveImages(
+    List<MediaImage> images, {
+    int? onlyIndex,
+    String? downloadId,
+    void Function(DownloadProgress progress)? onProgress,
+  }) {
+    return _media.saveImages(
+      images,
+      onlyIndex: onlyIndex,
+      downloadId: downloadId,
+      onProgress: onProgress,
+    );
+  }
+
   Future<Result<String>> download(
     MediaPart part, {
     int? videoQuality,
