@@ -107,6 +107,7 @@ class BilibiliResolver {
     caseSensitive: false,
   );
   static final RegExp _chrFilter = RegExp(r"[!'()*]");
+  static final RegExp _alnum = RegExp(r'[0-9A-Za-z]');
   static final Random _random = Random();
 
   final Dio _dio;
@@ -413,8 +414,17 @@ class BilibiliResolver {
     return '';
   }
 
+  RegExpMatch? _firstBv(String text) {
+    for (final RegExpMatch match in _bvPattern.allMatches(text)) {
+      if (match.start == 0 || !_alnum.hasMatch(text[match.start - 1])) {
+        return match;
+      }
+    }
+    return null;
+  }
+
   ({String? bvid, int? aid}) _extractIds(String input) {
-    final RegExpMatch? bv = _bvPattern.firstMatch(input);
+    final RegExpMatch? bv = _firstBv(input);
     if (bv != null) {
       return (
         bvid: bv.group(0)!.replaceFirst(RegExp(r'^[Bb][Vv]'), 'BV'),

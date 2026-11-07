@@ -203,23 +203,28 @@ class DownloaderStore extends ChangeNotifier {
     final int? index = onlyIndex == null || source.images.isEmpty
         ? null
         : onlyIndex.clamp(0, source.images.length - 1);
+    int savedCount = 0;
+    int liveCount = 0;
     final Result<String> result = await _api.saveImages(
       source.images,
       onlyIndex: index,
       downloadId: downloadId,
       onProgress: onProgress,
+      onSaved: (int saved, int live) {
+        savedCount = saved;
+        liveCount = live;
+      },
     );
     if (result is Ok<String>) {
       final List<MediaImage> saved = index == null
           ? source.images
           : <MediaImage>[source.images[index]];
-      final int liveCount = saved.where((MediaImage e) => e.isLive).length;
+      final int total = savedCount > 0 ? savedCount : saved.length;
       final DownloadTask task = DownloadTask(
         id: downloadId,
         title: source.title,
         platform: source.platformLabel,
-        qualityLabel:
-            '图文 · ${saved.length} 张${liveCount > 0 ? ' · $liveCount 实况' : ''}',
+        qualityLabel: '图文 · $total 张${liveCount > 0 ? ' · $liveCount 实况' : ''}',
         createdAt: DateTime.now(),
         status: DownloadStatus.completed,
         progress: 1,
@@ -368,7 +373,8 @@ class DownloaderStore extends ChangeNotifier {
     }
     _retrying.add(task.id);
     try {
-      final MediaPart? part = task.part;
+      final MediaPart? oldPart = task.part;
+      final MediaPart? part = oldPart;
       if (part != null) {
         final Result<List<MediaStream>> refreshed = await _api.refreshStreams(
           part,
@@ -390,10 +396,20 @@ class DownloaderStore extends ChangeNotifier {
           return;
         }
       }
-      // 刷新后码率/分片可能变化，旧临时文件不能续接；从零开始避免拼出坏文件。
-      await _api.cleanup(task.id);
-      // 重试可能因签名/分片失效而从零开始，先清掉旧进度，避免停在虚假的百分比。
-      task.progress = 0;
+      // 同一画质/音轨才可复用临时分片；档位变了必须清掉，避免拼出坏文件。
+      final bool resumable =
+          oldPart != null &&
+          oldPart.streams.isNotEmpty &&
+          task.part != null &&
+          oldPart.sameDownloadSelection(
+            task.part!,
+            videoQuality: task.videoQuality,
+            audioOnly: task.audioOnly,
+          );
+      if (!resumable) {
+        await _api.cleanup(task.id);
+        task.progress = 0;
+      }
       await resumeTask(task);
     } finally {
       _retrying.remove(task.id);

@@ -197,6 +197,40 @@ class MediaPart {
     return audios.first;
   }
 
+  /// 手动重试时判断新旧流是否仍是同一选择，决定能否复用临时分片。
+  bool sameDownloadSelection(
+    MediaPart other, {
+    int? videoQuality,
+    bool audioOnly = false,
+  }) {
+    final MediaStream? oldAudio = pickAudio();
+    final MediaStream? newAudio = other.pickAudio();
+    if (audioOnly) {
+      if (oldAudio != null || newAudio != null) {
+        return oldAudio != null &&
+            newAudio != null &&
+            oldAudio.quality == newAudio.quality;
+      }
+      // 抖音无独立音轨：抽轨下载的是最低画质视频。
+      return pickSmallestVideo()?.quality == other.pickSmallestVideo()?.quality;
+    }
+    final MediaStream? oldVideo = pickVideoQuality(videoQuality);
+    final MediaStream? newVideo = other.pickVideoQuality(videoQuality);
+    if (oldVideo == null || newVideo == null) {
+      return false;
+    }
+    if (oldVideo.quality != newVideo.quality) {
+      return false;
+    }
+    if ((oldAudio == null) != (newAudio == null)) {
+      return false;
+    }
+    if (oldAudio != null && oldAudio.quality != newAudio!.quality) {
+      return false;
+    }
+    return true;
+  }
+
   /// 仅音频抽取时用最低画质视频，避免为了音轨下载整段最高码率。
   MediaStream? pickSmallestVideo() {
     final videos = streams.where((s) => s.kind == 'video').toList();

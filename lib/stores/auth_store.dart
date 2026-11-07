@@ -58,12 +58,11 @@ class AuthStore extends ChangeNotifier {
   bool _vip = false;
   bool _ready = false;
   bool _sessionInvalid = false;
-  bool _lastFetchUnauthorized = false;
   DateTime? _cookieExpiresAt;
   int _authSeq = 0;
 
   bool get ready => _ready;
-  String? get cookie => _cookie;
+  String? get cookie => _sessionInvalid ? null : _cookie;
   DateTime? get cookieExpiresAt => _cookieExpiresAt;
   String? get uname => _uname;
   String? get face => _face;
@@ -105,10 +104,12 @@ class AuthStore extends ChangeNotifier {
   Future<bool> loginWithCookie(String rawCookie) async {
     final int seq = ++_authSeq;
     final String cookie = sanitizeCookie(rawCookie);
-    final BiliProfile? profile = await _fetchProfile(cookie);
-    if (profile == null || seq != _authSeq) {
+    final ({BiliProfile? profile, bool unauthorized}) fetched =
+        await _fetchProfile(cookie);
+    if (fetched.profile == null || seq != _authSeq) {
       return false;
     }
+    final BiliProfile profile = fetched.profile!;
     _cookie = cookie;
     _cookieExpiresAt = parseSessdataExpiry(cookie);
     _sessionInvalid = false;
@@ -128,14 +129,14 @@ class AuthStore extends ChangeNotifier {
     if (cookie == null) {
       return false;
     }
-    final BiliProfile? profile = await _fetchProfile(cookie);
-    final bool unauthorized = _lastFetchUnauthorized;
+    final ({BiliProfile? profile, bool unauthorized}) fetched =
+        await _fetchProfile(cookie);
     // 刷新期间用户已退出/切换账号：丢弃旧请求结果，避免新 Cookie 配旧资料。
     if (seq != _authSeq || _cookie != cookie) {
       return false;
     }
-    if (profile == null) {
-      if (unauthorized) {
+    if (fetched.profile == null) {
+      if (fetched.unauthorized) {
         _sessionInvalid = true;
         notifyListeners();
       }
@@ -144,6 +145,7 @@ class AuthStore extends ChangeNotifier {
       }
       return false;
     }
+    final BiliProfile profile = fetched.profile!;
     _sessionInvalid = false;
     _uname = profile.uname;
     _face = profile.face;
@@ -190,8 +192,9 @@ class AuthStore extends ChangeNotifier {
     }
   }
 
-  Future<BiliProfile?> _fetchProfile(String cookie) async {
-    _lastFetchUnauthorized = false;
+  Future<({BiliProfile? profile, bool unauthorized})> _fetchProfile(
+    String cookie,
+  ) async {
     try {
       final Response<dynamic> res = await _dio.get<dynamic>(
         'https://api.bilibili.com/x/web-interface/nav',
@@ -209,32 +212,34 @@ class AuthStore extends ChangeNotifier {
       if (body is Map) {
         final int code = (body['code'] as num?)?.toInt() ?? 0;
         if (code == -101 || code == -111) {
-          _lastFetchUnauthorized = true;
-          return null;
+          return (profile: null, unauthorized: true);
         }
         if (code == 0) {
           final dynamic data = body['data'];
-          if (data is Map && data['isLogin'] == true) {
-            return BiliProfile(
-              uname: (data['uname'] ?? '').toString(),
-              face: (data['face'] ?? '').toString(),
-              mid: (data['mid'] as num?)?.toInt() ?? 0,
-              vip: (data['vipStatus'] as num?) == 1,
-            );
+          if (data is Map) {
+            if (data['isLogin'] == true) {
+              return (
+                profile: BiliProfile(
+                  uname: (data['uname'] ?? '').toString(),
+                  face: (data['face'] ?? '').toString(),
+                  mid: (data['mid'] as num?)?.toInt() ?? 0,
+                  vip: (data['vipStatus'] as num?) == 1,
+                ),
+                unauthorized: false,
+              );
+            }
+            return (profile: null, unauthorized: true);
           }
-          _lastFetchUnauthorized = true;
-          return null;
+          // code 0 但 data 不是 Map：接口异常，不据此判定登录失效。
+          return (profile: null, unauthorized: false);
         }
       }
-      return null;
+      return (profile: null, unauthorized: false);
     } on DioException catch (e) {
       final int? status = e.response?.statusCode;
-      if (status == 401 || status == 403) {
-        _lastFetchUnauthorized = true;
-      }
-      return null;
+      return (profile: null, unauthorized: status == 401 || status == 403);
     } catch (_) {
-      return null;
+      return (profile: null, unauthorized: false);
     }
   }
 

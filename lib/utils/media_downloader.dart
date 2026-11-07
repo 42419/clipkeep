@@ -61,10 +61,11 @@ class MediaDownloader {
     } catch (_) {
       // 读取失败默认保存到相册。
     }
-    if (saveToGallery && !await _ensureGalleryAccess()) {
-      return const Err(AppError('没有相册写入权限'));
-    }
     try {
+      // 仅音频始终写 Download/ClipKeep，不申请相册权限；视频/封面才预检。
+      if (!audioOnly && saveToGallery && !await _ensureGalleryAccess()) {
+        return const Err(AppError('没有相册写入权限'));
+      }
       final dir =
           await getExternalStorageDirectory() ??
           await getApplicationDocumentsDirectory();
@@ -311,6 +312,7 @@ class MediaDownloader {
     int? onlyIndex,
     String? downloadId,
     void Function(DownloadProgress progress)? onProgress,
+    void Function(int savedItems, int liveItems)? onSaved,
   }) async {
     if (images.isEmpty) {
       return const Err(AppError('没有可保存的图片'));
@@ -413,6 +415,7 @@ class MediaDownloader {
           }
         }
 
+        onSaved?.call(savedImages + savedMotions, savedMotions + savedVideos);
         onProgress?.call(
           DownloadProgress(
             fraction: (i + 1) / queue.length,

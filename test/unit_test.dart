@@ -350,6 +350,47 @@ void main() {
     test('仅音频抽轨选最低视频画质', () {
       expect(part.pickSmallestVideo()?.quality, 720);
     });
+
+    test('同画质重试才允许复用临时分片', () {
+      const MediaPart same = MediaPart(
+        id: 'BV-test-1',
+        title: '测试',
+        durationSeconds: 10,
+        streams: <MediaStream>[
+          MediaStream(
+            kind: 'video',
+            quality: 720,
+            codec: 'avc',
+            urls: <String>['https://example.com/720-new.mp4'],
+            headers: <String, String>{},
+          ),
+          MediaStream(
+            kind: 'video',
+            quality: 1080,
+            codec: 'avc',
+            urls: <String>['https://example.com/1080-new.mp4'],
+            headers: <String, String>{},
+          ),
+        ],
+      );
+      const MediaPart changed = MediaPart(
+        id: 'BV-test-1',
+        title: '测试',
+        durationSeconds: 10,
+        streams: <MediaStream>[
+          MediaStream(
+            kind: 'video',
+            quality: 1080,
+            codec: 'avc',
+            urls: <String>['https://example.com/1080-new.mp4'],
+            headers: <String, String>{},
+          ),
+        ],
+      );
+      expect(part.sameDownloadSelection(same, videoQuality: 720), isTrue);
+      expect(part.sameDownloadSelection(changed, videoQuality: 720), isFalse);
+      expect(part.sameDownloadSelection(changed, videoQuality: 1080), isTrue);
+    });
   });
 
   group('任务持久化', () {

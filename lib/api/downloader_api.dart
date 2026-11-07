@@ -153,6 +153,23 @@ class DownloaderApi {
         bytes[11] == 0x50) {
       return true;
     }
+    if (bytes[4] == 0x66 &&
+        bytes[5] == 0x74 &&
+        bytes[6] == 0x79 &&
+        bytes[7] == 0x70) {
+      final String brand = String.fromCharCodes(bytes.sublist(8, 12));
+      return <String>[
+        'heic',
+        'heix',
+        'hevc',
+        'heim',
+        'heis',
+        'mif1',
+        'msf1',
+        'avif',
+        'avis',
+      ].contains(brand);
+    }
     return false;
   }
 
@@ -182,6 +199,16 @@ class DownloaderApi {
     caseSensitive: false,
   );
   static final RegExp _trailingPunctuation = RegExp(r'[),.;!?，。；！？、）】》」』]+$');
+  static final RegExp _alnum = RegExp(r'[0-9A-Za-z]');
+
+  RegExpMatch? _firstBv(String text) {
+    for (final RegExpMatch match in _bvPattern.allMatches(text)) {
+      if (match.start == 0 || !_alnum.hasMatch(text[match.start - 1])) {
+        return match;
+      }
+    }
+    return null;
+  }
 
   /// 把用户输入归一化为可解析形式：完整链接、含标题的分享文本、b23 短链都可。
   /// 先判平台再抽 BV：抖音长链接的随机串可能恰好匹配 BV 号，反过来会误判。
@@ -189,7 +216,7 @@ class DownloaderApi {
     final String text = raw.trim();
     final RegExpMatch? match = _urlPattern.firstMatch(text);
     if (match == null) {
-      final RegExpMatch? bv = _bvPattern.firstMatch(text);
+      final RegExpMatch? bv = _firstBv(text);
       if (bv != null) {
         return bv.group(0)!.replaceFirst(RegExp(r'^[Bb][Vv]'), 'BV');
       }
@@ -213,7 +240,7 @@ class DownloaderApi {
         resolved = finalUrl;
       }
     }
-    final RegExpMatch? bv = _bvPattern.firstMatch(resolved);
+    final RegExpMatch? bv = _firstBv(resolved);
     if (bv != null) {
       final Uri? uri = Uri.tryParse(resolved);
       final String bvId = bv.group(0)!.replaceFirst(RegExp(r'^[Bb][Vv]'), 'BV');
@@ -256,12 +283,14 @@ class DownloaderApi {
     int? onlyIndex,
     String? downloadId,
     void Function(DownloadProgress progress)? onProgress,
+    void Function(int savedItems, int liveItems)? onSaved,
   }) {
     return _media.saveImages(
       images,
       onlyIndex: onlyIndex,
       downloadId: downloadId,
       onProgress: onProgress,
+      onSaved: onSaved,
     );
   }
 
