@@ -901,6 +901,34 @@ class MediaDownloader {
     }
   }
 
+  /// 清理不在现有任务列表里的临时文件（启动时调用，回收被杀进程遗留的分片）。
+  Future<void> cleanupOrphans(Set<String> keepIds) async {
+    try {
+      final Directory dir =
+          await getExternalStorageDirectory() ??
+          await getApplicationDocumentsDirectory();
+      await for (final FileSystemEntity entity in dir.list()) {
+        if (entity is! File) {
+          continue;
+        }
+        final String name = entity.path.split(Platform.pathSeparator).last;
+        if (!name.startsWith('clipkeep_')) {
+          continue;
+        }
+        if (keepIds.any((String id) => id.isNotEmpty && name.contains(id))) {
+          continue;
+        }
+        try {
+          await entity.delete();
+        } catch (_) {
+          // 单个文件删除失败不影响其它文件。
+        }
+      }
+    } catch (_) {
+      // 临时目录不可用时忽略。
+    }
+  }
+
   /// 依次尝试主地址与备用地址；分片/单连接均支持断点续传。
   Future<void> _downloadStream(
     MediaStream stream,

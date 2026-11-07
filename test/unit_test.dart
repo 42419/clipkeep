@@ -25,6 +25,13 @@ void main() {
   });
 
   group('格式化', () {
+    test('点赞计数', () {
+      expect(formatCount(0), '0');
+      expect(formatCount(999), '999');
+      expect(formatCount(12400), '1.2w');
+      expect(formatCount(124000000), '1.2亿');
+    });
+
     test('文件大小', () {
       expect(formatBytes(0), '0 MB');
       expect(formatBytes(1536 * 1024), '1.5 MB');
@@ -281,6 +288,45 @@ void main() {
       expect(source.isImageAlbum, isTrue);
       expect(source.title.endsWith('…'), isTrue);
       expect(source.title.length, lessThanOrEqualTo(61));
+    });
+  });
+
+  group('任务持久化', () {
+    test('未完成任务保留 ID/画质/选项，重启后流需重新拉取', () {
+      final DownloadTask task = DownloadTask(
+        id: 'task-1',
+        title: '多 P 测试',
+        platform: '哔哩哔哩',
+        qualityLabel: '1080P',
+        createdAt: DateTime(2026, 11, 7),
+        part: const MediaPart(
+          id: 'BV1xx411c7mD-12345',
+          title: 'P2',
+          durationSeconds: 60,
+          streams: <MediaStream>[],
+        ),
+        videoQuality: 1080,
+        saveCover: true,
+        status: DownloadStatus.paused,
+        progress: 0.42,
+      );
+      final DownloadTask restored = DownloadTask.fromRecord(task.toRecord());
+      expect(restored.status, DownloadStatus.paused);
+      expect(restored.part?.id, 'BV1xx411c7mD-12345');
+      expect(restored.part?.streams, isEmpty);
+      expect(restored.videoQuality, 1080);
+      expect(restored.saveCover, isTrue);
+      expect(restored.progress, closeTo(0.42, 0.001));
+    });
+
+    test('旧记录没有 status 时按已完成兼容', () {
+      final DownloadTask restored = DownloadTask.fromRecord(<String, dynamic>{
+        'id': 'old',
+        'title': '旧记录',
+        'createdAt': DateTime(2026, 1, 1).toIso8601String(),
+      });
+      expect(restored.status, DownloadStatus.completed);
+      expect(restored.progress, 1);
     });
   });
 

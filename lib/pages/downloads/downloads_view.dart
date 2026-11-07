@@ -26,6 +26,8 @@ class DownloadsView extends StatefulWidget {
 
 class _DownloadsViewState extends State<DownloadsView> {
   final ScrollController _scroll = ScrollController();
+  final M3EDismissibleListController _completedSwipe =
+      M3EDismissibleListController();
   bool _showClearFab = true;
   bool _openingResult = false;
   double _lastOffset = 0;
@@ -199,7 +201,7 @@ class _DownloadsViewState extends State<DownloadsView> {
       confirmLabel: '清空',
     );
     if (ok) {
-      store.clearCompleted();
+      unawaited(store.clearCompleted());
     }
   }
 
@@ -207,10 +209,13 @@ class _DownloadsViewState extends State<DownloadsView> {
     DownloaderStore store,
     DownloadTask task,
   ) async {
+    final bool active = !task.isCompleted;
     final bool ok = await showConfirmDialog(
       context,
-      title: '删除这条记录？',
-      content: '只删除下载记录与临时文件，不会删除已保存到相册或下载目录的文件。',
+      title: active ? '取消并删除这条下载？' : '删除这条记录？',
+      content: active
+          ? '将停止下载并删除记录与临时文件，不会删除已经保存到相册或下载目录的文件。'
+          : '只删除下载记录与临时文件，不会删除已保存到相册或下载目录的文件。',
       confirmLabel: '删除',
     );
     if (ok) {
@@ -362,6 +367,13 @@ class _DownloadsViewState extends State<DownloadsView> {
                   }
                 },
               ),
+              const SizedBox(width: 4),
+              M3EIconButton(
+                icon: const Icon(Icons.delete_outline),
+                variant: M3EIconButtonVariant.tonal,
+                tooltip: '取消并删除',
+                onPressed: () => _confirmDeleteTask(store, task),
+              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -447,6 +459,13 @@ class _DownloadsViewState extends State<DownloadsView> {
             mainAxisAlignment: MainAxisAlignment.end,
             children: <Widget>[
               M3EButton.text(
+                onPressed: () => _confirmDeleteTask(store, task),
+                size: M3EButtonSize.sm,
+                tooltip: '删除记录',
+                child: const Text('删除'),
+              ),
+              const SizedBox(width: 8),
+              M3EButton.text(
                 onPressed: () => unawaited(store.retryTask(task)),
                 size: M3EButtonSize.sm,
                 tooltip: '重试',
@@ -478,6 +497,8 @@ class _DownloadsViewState extends State<DownloadsView> {
     return M3EList(
       gap: 12,
       itemCount: tasks.length,
+      dismissController: _completedSwipe,
+      onTap: (int index) => _completedSwipe.reveal(index, leading: false),
       itemBuilder: (BuildContext context, int index) {
         final DownloadTask task = tasks[index];
         return M3EListItem(
@@ -587,7 +608,9 @@ class _DownloadsViewState extends State<DownloadsView> {
     if (phase != null && phase.isNotEmpty) {
       return phase;
     }
-    final List<String> parts = <String>[];
+    final List<String> parts = <String>[
+      if (task.status == DownloadStatus.paused) '已暂停',
+    ];
     if (task.totalBytes > 0) {
       parts.add(
         '${formatBytes(task.receivedBytes)} / ${formatBytes(task.totalBytes)}',

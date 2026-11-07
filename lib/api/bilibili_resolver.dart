@@ -8,6 +8,7 @@
 // 本文件由 clipkeep 在 PiliPlus 实现基础上改写（移除 hive/http2/grpc 等重依赖）。
 // 分发本文件须遵守 GPL-3.0-or-later，并保留本声明与相关许可证文本。
 // ---------------------------------------------------------------------------
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -110,6 +111,33 @@ class BilibiliResolver {
   String? _mixinKey;
   DateTime? _mixinKeyAt;
 
+  // playurl 请求串行化并保持最小间隔，避免快速切 P/重试触发风控。
+  static Future<void> _playUrlGate = Future<void>.value();
+  static DateTime _lastPlayUrlAt = DateTime.fromMillisecondsSinceEpoch(0);
+  static const Duration _playUrlMinGap = Duration(milliseconds: 800);
+
+  Future<T> _withPlayUrlGate<T>(Future<T> Function() action) async {
+    final Completer<void> release = Completer<void>();
+    final Future<void> previous = _playUrlGate;
+    _playUrlGate = release.future;
+    await previous;
+    final Duration elapsed = DateTime.now().difference(_lastPlayUrlAt);
+    if (elapsed < _playUrlMinGap) {
+      await Future<void>.delayed(_playUrlMinGap - elapsed);
+    }
+    try {
+      return await action();
+    } finally {
+      _lastPlayUrlAt = DateTime.now();
+      release.complete();
+    }
+  }
+
+  int _requestedPage(String input) {
+    final Uri? uri = Uri.tryParse(input);
+    return int.tryParse(uri?.queryParameters['p'] ?? '') ?? 1;
+  }
+
   /// 把归一化后的输入（BV/AV 号或含 BV 的链接）解析为 [ParsedSource]。
   Future<ParsedSource> resolve(String input, {String? cookie}) async {
     final ({String? bvid, int? aid}) ids = _extractIds(input);
@@ -133,14 +161,17 @@ class BilibiliResolver {
         ?.cast<String, dynamic>();
 
     final List<Map<String, dynamic>> pages = _pagesOf(detail);
+    final int selectedPage = pages.isEmpty
+        ? 0
+        : (_requestedPage(input).clamp(1, pages.length) - 1);
 
     final List<MediaPart> parts = <MediaPart>[];
     for (int i = 0; i < pages.length; i++) {
       final Map<String, dynamic> page = pages[i];
       final int? cid = (page['cid'] as num?)?.toInt();
-      // 界面只用第一个分 P，其余分 P 仅保留元信息，避免多 P 视频一次性打满请求。
+      // 只给当前选中的 P 拉流；切换分 P 时再按需请求，避免一次性打满 playurl。
       List<MediaStream> streams = const <MediaStream>[];
-      if (i == 0 && cid != null) {
+      if (i == selectedPage && cid != null) {
         streams = await _fetchStreams(
           bvid: bvid,
           aid: aid,
@@ -160,17 +191,24 @@ class BilibiliResolver {
     }
 
     final int? pubdate = (detail['pubdate'] as num?)?.toInt();
-    final String? sourceUrl = bvid != null
+    final Map<String, dynamic>? stat = (detail['stat'] as Map?)
+        ?.cast<String, dynamic>();
+    final String? baseUrl = bvid != null
         ? 'https://www.bilibili.com/video/$bvid'
         : (aid != null ? 'https://www.bilibili.com/video/av$aid' : null);
+    final String? sourceUrl = baseUrl == null
+        ? null
+        : (pages.length > 1 ? '$baseUrl?p=${selectedPage + 1}' : baseUrl);
     return ParsedSource(
       title: (detail['title'] as String?) ?? '未知标题',
       author: (owner?['name'] as String?) ?? '',
       coverUrl: detail['pic'] as String?,
       publishDate: pubdate == null ? null : _formatDate(pubdate),
+      likeCount: (stat?['like'] as num?)?.toInt(),
       ownerMid: (owner?['mid'] as num?)?.toInt(),
       authorAvatarUrl: owner?['face'] as String?,
       sourceUrl: sourceUrl,
+      initialPartIndex: selectedPage,
       parts: parts,
     );
   }
@@ -220,6 +258,37 @@ class BilibiliResolver {
   }
 
   Future<List<MediaStream>> _fetchStreams({
+    String? bvid,
+    int? aid,
+    required int cid,
+    String? cookie,
+  }) {
+    return _withPlayUrlGate(() async {
+      try {
+        return await _fetchStreamsOnce(
+          bvid: bvid,
+          aid: aid,
+          cid: cid,
+          cookie: cookie,
+        );
+      } on DioException catch (e) {
+        final int? code = e.response?.statusCode;
+        if (code == 412 || code == 429) {
+          // 风控/限流：冷却后只重试一次。
+          await Future<void>.delayed(const Duration(seconds: 3));
+          return _fetchStreamsOnce(
+            bvid: bvid,
+            aid: aid,
+            cid: cid,
+            cookie: cookie,
+          );
+        }
+        rethrow;
+      }
+    });
+  }
+
+  Future<List<MediaStream>> _fetchStreamsOnce({
     String? bvid,
     int? aid,
     required int cid,

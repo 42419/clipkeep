@@ -6,6 +6,8 @@ class ParsedSource {
     required this.coverUrl,
     required this.parts,
     this.images = const <MediaImage>[],
+    this.likeCount,
+    this.initialPartIndex = 0,
     this.publishDate,
     this.ownerMid,
     this.authorAvatarUrl,
@@ -25,6 +27,12 @@ class ParsedSource {
 
   /// 图文/图集图片；实况图的短视频挂在每张图的 liveVideo 上。
   final List<MediaImage> images;
+
+  /// 点赞数（B 站 stat.like / 抖音 stats.digg_count），未知为 null。
+  final int? likeCount;
+
+  /// 初始选中的分 P（0-based）。
+  final int initialPartIndex;
 
   /// 来源平台：bilibili / douyin / tiktok。
   final String platform;

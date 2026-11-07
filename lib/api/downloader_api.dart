@@ -164,7 +164,12 @@ class DownloaderApi {
     }
     final RegExpMatch? bv = _bvPattern.firstMatch(resolved);
     if (bv != null) {
-      return bv.group(0)!;
+      final Uri? uri = Uri.tryParse(resolved);
+      final String? page = uri?.queryParameters['p'];
+      if (page == null || page.isEmpty) {
+        return bv.group(0)!;
+      }
+      return 'https://www.bilibili.com/video/${bv.group(0)}?p=$page';
     }
     return resolved;
   }
@@ -190,6 +195,9 @@ class DownloaderApi {
 
   /// 删除某个任务的临时下载产物（源流/分片/合并结果）。
   Future<void> cleanup(String downloadId) => _media.cleanupTemp(downloadId);
+
+  Future<void> cleanupOrphans(Set<String> keepIds) =>
+      _media.cleanupOrphans(keepIds);
 
   Future<Result<String>> saveImages(
     List<MediaImage> images, {

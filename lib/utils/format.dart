@@ -33,3 +33,18 @@ String formatEta(int seconds) {
   final int s = seconds % 60;
   return '$m 分 $s 秒';
 }
+
+/// 点赞/播放等计数：1.2w / 3.4亿。
+String formatCount(int? value) {
+  final int n = value ?? 0;
+  if (n <= 0) {
+    return '0';
+  }
+  if (n >= 100000000) {
+    return '${(n / 100000000).toStringAsFixed(1)}亿';
+  }
+  if (n >= 10000) {
+    return '${(n / 10000).toStringAsFixed(1)}w';
+  }
+  return '$n';
+}

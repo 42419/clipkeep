@@ -22,17 +22,22 @@ class DownloaderStore extends ChangeNotifier {
   final List<DownloadTask> _tasks = <DownloadTask>[];
   final Map<String, CancelToken> _tokens = <String, CancelToken>{};
   final Map<String, Future<void>> _running = <String, Future<void>>{};
+  final Completer<void> _historyReady = Completer<void>();
 
   bool _parsing = false;
   String? _error;
   ParsedSource? _source;
   String? _savedMessage;
   int _parseSeq = 0;
+  int _partIndex = 0;
+  bool _partLoading = false;
 
   bool get parsing => _parsing;
   String? get error => _error;
   ParsedSource? get source => _source;
   String? get savedMessage => _savedMessage;
+  int get partIndex => _partIndex;
+  bool get partLoading => _partLoading;
 
   String? _lastInput;
 
@@ -62,12 +67,59 @@ class DownloaderStore extends ChangeNotifier {
     }
     if (result is Ok<ParsedSource>) {
       _source = result.value;
+      _partIndex = result.value.parts.isEmpty
+          ? 0
+          : result.value.initialPartIndex.clamp(
+              0,
+              result.value.parts.length - 1,
+            );
     } else if (result is Err<ParsedSource>) {
       _source = null;
       _error = result.error.message;
     }
     _parsing = false;
+    _partLoading = false;
     notifyListeners();
+  }
+
+  /// 按需加载某个分 P 的 DASH 流；只请求当前 P，避免一次性打满 playurl。
+  Future<Result<MediaPart>> selectPart(int index) async {
+    final ParsedSource? source = _source;
+    if (source == null || index < 0 || index >= source.parts.length) {
+      return const Err(AppError('分 P 不存在'));
+    }
+    if (_partLoading) {
+      return const Err(AppError('正在加载分 P，请稍候'));
+    }
+    final MediaPart part = source.parts[index];
+    if (part.streams.isNotEmpty) {
+      _partIndex = index;
+      notifyListeners();
+      return Ok<MediaPart>(part);
+    }
+    _partLoading = true;
+    notifyListeners();
+    try {
+      final Result<List<MediaStream>> refreshed = await _api.refreshStreams(
+        part,
+        cookie: cookieProvider?.call(),
+      );
+      if (refreshed is Ok<List<MediaStream>> && refreshed.value.isNotEmpty) {
+        final MediaPart loaded = MediaPart(
+          id: part.id,
+          title: part.title,
+          durationSeconds: part.durationSeconds,
+          streams: refreshed.value,
+        );
+        source.parts[index] = loaded;
+        _partIndex = index;
+        return Ok<MediaPart>(loaded);
+      }
+      return const Err(AppError('该分 P 暂时无法获取画质，请稍后重试'));
+    } finally {
+      _partLoading = false;
+      notifyListeners();
+    }
   }
 
   // ---------- 下载任务 ----------
@@ -125,6 +177,7 @@ class DownloaderStore extends ChangeNotifier {
       sourceUrl: sourceUrl,
     );
     _tasks.insert(0, task);
+    unawaited(_persistCompleted());
     notifyListeners();
     _startRun(task);
     return task;
@@ -246,12 +299,12 @@ class DownloaderStore extends ChangeNotifier {
       if (_tasks.contains(task)) {
         task.thumbnailPath = thumb;
       }
-      unawaited(_persistCompleted());
     } else if (result is Err<String>) {
       task.phase = null;
       task.status = DownloadStatus.failed;
       task.error = result.error.message;
     }
+    unawaited(_persistCompleted());
     notifyListeners();
   }
 
@@ -261,6 +314,7 @@ class DownloaderStore extends ChangeNotifier {
     }
     task.status = DownloadStatus.paused;
     _tokens[task.id]?.cancel('paused');
+    unawaited(_persistCompleted());
     notifyListeners();
   }
 
@@ -268,6 +322,11 @@ class DownloaderStore extends ChangeNotifier {
   /// 再启动新运行，避免两个运行同时写同一个临时文件。
   Future<void> resumeTask(DownloadTask task) async {
     if (task.status == DownloadStatus.downloading || task.part == null) {
+      return;
+    }
+    // 重启后恢复的任务没有签名 URL：先重新拉流，再续传。
+    if (task.part!.streams.isEmpty) {
+      await retryTask(task);
       return;
     }
     final Future<void>? previous = _running[task.id];
@@ -302,6 +361,13 @@ class DownloaderStore extends ChangeNotifier {
           durationSeconds: part.durationSeconds,
           streams: refreshed.value,
         );
+      } else {
+        task
+          ..status = DownloadStatus.failed
+          ..error = '刷新下载地址失败，请稍后重试';
+        unawaited(_persistCompleted());
+        notifyListeners();
+        return;
       }
     }
     // 重试可能因签名/分片失效而从零开始，先清掉旧进度，避免停在虚假的百分比。
@@ -327,7 +393,8 @@ class DownloaderStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  void clearCompleted() {
+  Future<void> clearCompleted() async {
+    await _historyReady.future;
     final List<DownloadTask> completed = _tasks
         .where((DownloadTask t) => t.isCompleted)
         .toList();
@@ -356,33 +423,51 @@ class DownloaderStore extends ChangeNotifier {
   Future<void> _loadHistory() async {
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
-      final String? raw = prefs.getString('download_history');
+      final String? raw =
+          prefs.getString('download_tasks') ??
+          prefs.getString('download_history');
       if (raw == null || raw.isEmpty) {
+        unawaited(_api.cleanupOrphans(<String>{}));
         return;
       }
       final List<dynamic> list = jsonDecode(raw) as List<dynamic>;
       for (final dynamic item in list) {
-        final DownloadTask task = DownloadTask.fromRecord(
-          (item as Map).cast<String, dynamic>(),
-        );
-        if (!_tasks.any((DownloadTask t) => t.id == task.id)) {
-          _tasks.add(task);
+        try {
+          final DownloadTask task = DownloadTask.fromRecord(
+            (item as Map).cast<String, dynamic>(),
+          );
+          if (!_tasks.any((DownloadTask t) => t.id == task.id)) {
+            _tasks.add(task);
+          }
+        } catch (_) {
+          // 单条坏记录跳过，避免整批历史丢失。
         }
       }
       notifyListeners();
+      final Set<String> activeIds = _tasks
+          .where((DownloadTask t) => !t.isCompleted)
+          .map((DownloadTask t) => t.id)
+          .toSet();
+      unawaited(_api.cleanupOrphans(activeIds));
     } catch (_) {
       // 读取历史失败忽略。
+    } finally {
+      if (!_historyReady.isCompleted) {
+        _historyReady.complete();
+      }
     }
   }
 
   Future<void> _persistCompleted() async {
+    // 冷启动加载完成前不要覆写历史，否则新任务可能把旧记录挤掉。
+    await _historyReady.future;
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
+      // 保留全部任务：未完成的在重启后仍可继续/删除。
       final List<Map<String, dynamic>> list = _tasks
-          .where((DownloadTask t) => t.isCompleted)
           .map((DownloadTask t) => t.toRecord())
           .toList();
-      await prefs.setString('download_history', jsonEncode(list));
+      await prefs.setString('download_tasks', jsonEncode(list));
     } catch (_) {
       // 写入失败忽略。
     }

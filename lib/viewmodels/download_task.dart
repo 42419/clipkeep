@@ -78,7 +78,7 @@ class DownloadTask {
   bool get isFailed => status == DownloadStatus.failed;
   bool get isCompleted => status == DownloadStatus.completed;
 
-  /// 仅持久化展示字段（已完成历史）。
+  /// 持久化展示与恢复字段：已完成记录可回看，未完成任务重启后可继续/删除。
   Map<String, dynamic> toRecord() => <String, dynamic>{
     'id': id,
     'title': title,
@@ -90,22 +90,73 @@ class DownloadTask {
     'sourceUrl': sourceUrl,
     'thumbnailPath': thumbnailPath,
     'createdAt': createdAt.toIso8601String(),
+    'status': status.name,
+    'progress': progress,
+    'videoQuality': videoQuality,
+    'audioOnly': audioOnly,
+    'coverOnly': coverOnly,
+    'saveCover': saveCover,
+    'error': error,
+    'phase': phase,
+    'savedMessage': savedMessage,
+    'partId': part?.id,
+    'partTitle': part?.title,
+    'partDuration': part?.durationSeconds,
   };
 
-  factory DownloadTask.fromRecord(Map<String, dynamic> json) => DownloadTask(
-    id: (json['id'] as String?) ?? '',
-    title: (json['title'] as String?) ?? '',
-    platform: _resolvePlatform(json),
-    qualityLabel: (json['qualityLabel'] as String?) ?? '',
-    createdAt:
-        DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
-    status: DownloadStatus.completed,
-    progress: 1,
-    receivedBytes: (json['receivedBytes'] as num?)?.toInt() ?? 0,
-    totalBytes: (json['totalBytes'] as num?)?.toInt() ?? 0,
-    coverUrl: json['coverUrl'] as String?,
-    sourceUrl: json['sourceUrl'] as String?,
-    thumbnailPath: json['thumbnailPath'] as String?,
+  factory DownloadTask.fromRecord(Map<String, dynamic> json) {
+    final DownloadStatus saved = _statusFrom(json['status'] as String?);
+    // 进程被杀时可能残留 downloading：恢复为暂停，避免 UI 显示一个永远在下载的任务。
+    final DownloadStatus status = saved == DownloadStatus.downloading
+        ? DownloadStatus.paused
+        : saved;
+    final String id = (json['id'] as String?) ?? '';
+    final String title = (json['title'] as String?) ?? '';
+    final String? partId = json['partId'] as String?;
+    return DownloadTask(
+      id: id,
+      title: title,
+      platform: _resolvePlatform(json),
+      qualityLabel: (json['qualityLabel'] as String?) ?? '',
+      createdAt:
+          DateTime.tryParse(json['createdAt'] as String? ?? '') ??
+          DateTime.now(),
+      status: status,
+      progress: status == DownloadStatus.completed
+          ? 1
+          : ((json['progress'] as num?)?.toDouble() ?? 0),
+      receivedBytes: (json['receivedBytes'] as num?)?.toInt() ?? 0,
+      totalBytes: (json['totalBytes'] as num?)?.toInt() ?? 0,
+      coverUrl: json['coverUrl'] as String?,
+      sourceUrl: json['sourceUrl'] as String?,
+      thumbnailPath: json['thumbnailPath'] as String?,
+      videoQuality: (json['videoQuality'] as num?)?.toInt(),
+      audioOnly: json['audioOnly'] == true,
+      coverOnly: json['coverOnly'] == true,
+      saveCover: json['saveCover'] == true,
+      error: json['error'] as String?,
+      phase: json['phase'] as String?,
+      savedMessage: json['savedMessage'] as String?,
+      part: partId == null || partId.isEmpty
+          ? null
+          : MediaPart(
+              id: partId,
+              title: (json['partTitle'] as String?) ?? title,
+              durationSeconds: (json['partDuration'] as num?)?.toInt(),
+              // 签名 URL 不持久化；恢复后由 resume/retry 重新拉流。
+              streams: const <MediaStream>[],
+            ),
+    );
+  }
+}
+
+DownloadStatus _statusFrom(String? raw) {
+  if (raw == null || raw.isEmpty) {
+    return DownloadStatus.completed;
+  }
+  return DownloadStatus.values.firstWhere(
+    (DownloadStatus value) => value.name == raw,
+    orElse: () => DownloadStatus.completed,
   );
 }
 
