@@ -141,13 +141,7 @@ class _DownloadsViewState extends State<DownloadsView> {
                             : _buildActiveCard(theme, scheme, store, task);
                       },
                     )
-                  : ListView(
-                      controller: _scroll,
-                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
-                      children: <Widget>[
-                        _buildCompletedList(theme, scheme, store, tasks),
-                      ],
-                    ),
+                  : _buildCompletedList(theme, scheme, store, tasks),
             ),
           ],
         ),
@@ -500,7 +494,9 @@ class _DownloadsViewState extends State<DownloadsView> {
     DownloaderStore store,
     List<DownloadTask> tasks,
   ) {
-    return M3EList(
+    return M3EList.scrollable(
+      controller: _scroll,
+      listPadding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
       gap: 12,
       itemCount: tasks.length,
       dismissController: _completedSwipe,

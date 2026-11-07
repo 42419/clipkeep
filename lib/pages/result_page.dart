@@ -716,31 +716,27 @@ class _ResultPageState extends State<ResultPage> {
           ),
         ),
         const SizedBox(height: 8),
-        M3EButtonGroup(
-          type: M3EButtonGroupType.connected,
-          direction: Axis.horizontal,
-          shape: M3EButtonShape.square,
-          size: M3EButtonSize.sm,
-          selectedIndex: selected,
-          selectionRequired: true,
-          style: M3EButtonStyle.tonal,
-          overflow: M3EButtonGroupOverflow.menu,
-          spacing: 5,
-          onSelectedIndexChanged: (int? index) {
-            if (index == null || index == selected || store.partLoading) {
-              return;
-            }
-            unawaited(_changePart(store, index));
+        _buildLazyChoiceRow(
+          count: source.parts.length,
+          height: 36,
+          itemBuilder: (int i) {
+            final bool active = i == selected;
+            return M3EButton(
+              onPressed: () {
+                if (!active && !store.partLoading) {
+                  unawaited(_changePart(store, i));
+                }
+              },
+              enabled: !store.partLoading,
+              style: active ? M3EButtonStyle.filled : M3EButtonStyle.tonal,
+              size: M3EButtonSize.sm,
+              shape: M3EButtonShape.square,
+              label: Text('P${i + 1}'),
+              tooltip: source.parts[i].title.isEmpty
+                  ? 'P${i + 1}'
+                  : 'P${i + 1}：${source.parts[i].title}',
+            );
           },
-          actions: <M3EButtonGroupAction>[
-            for (int i = 0; i < source.parts.length; i++)
-              M3EButtonGroupAction(
-                label: Text('P${i + 1}'),
-                tooltip: source.parts[i].title.isEmpty
-                    ? 'P${i + 1}'
-                    : 'P${i + 1}：${source.parts[i].title}',
-              ),
-          ],
         ),
         if (store.partLoading) ...<Widget>[
           const SizedBox(height: 8),
@@ -1157,6 +1153,24 @@ class _ResultPageState extends State<ResultPage> {
     return '约 ${mb.toStringAsFixed(1)} MB';
   }
 
+  /// 横向选项只构建视口附近的项目，长分 P/多码率列表不会一次全建。
+  Widget _buildLazyChoiceRow({
+    required int count,
+    required double height,
+    required Widget Function(int index) itemBuilder,
+  }) {
+    return SizedBox(
+      height: height,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: EdgeInsets.zero,
+        itemCount: count,
+        separatorBuilder: (_, _) => const SizedBox(width: 6),
+        itemBuilder: (BuildContext context, int index) => itemBuilder(index),
+      ),
+    );
+  }
+
   Widget _buildQuality(
     ThemeData theme,
     ColorScheme scheme,
@@ -1180,32 +1194,27 @@ class _ResultPageState extends State<ResultPage> {
         if (streams.isEmpty)
           Text('无', style: theme.textTheme.bodyMedium)
         else
-          M3EButtonGroup(
-            type: M3EButtonGroupType.connected,
-            direction: Axis.horizontal,
-            shape: M3EButtonShape.square,
-            size: M3EButtonSize.md,
-            overflow: M3EButtonGroupOverflow.menu,
-            selectedIndex: selected,
-            style: M3EButtonStyle.filled,
-            density: M3EButtonGroupDensity.regular,
-            neighborSquish: true,
-            expandedRatio: 0.05,
-            spacing: 5,
-            onSelectedIndexChanged: (int? index) {
-              if (index != null) {
-                setState(() => _qualityIndex = index);
-              }
+          _buildLazyChoiceRow(
+            count: streams.length,
+            height: 42,
+            itemBuilder: (int i) {
+              final MediaStream stream = streams[i];
+              final bool active = i == selected;
+              return M3EButton(
+                onPressed: () {
+                  if (!active) {
+                    setState(() => _qualityIndex = i);
+                  }
+                },
+                style: active ? M3EButtonStyle.filled : M3EButtonStyle.tonal,
+                size: M3EButtonSize.md,
+                shape: M3EButtonShape.square,
+                label: Text(_qualityButtonLabel(stream, platform)),
+                tooltip: stream.detailText.isEmpty
+                    ? _qualityButtonLabel(stream, platform)
+                    : '${_qualityButtonLabel(stream, platform)} · ${stream.detailText}',
+              );
             },
-            actions: <M3EButtonGroupAction>[
-              for (final MediaStream s in streams)
-                M3EButtonGroupAction(
-                  label: Text(_qualityButtonLabel(s, platform)),
-                  tooltip: s.detailText.isEmpty
-                      ? _qualityButtonLabel(s, platform)
-                      : '${_qualityButtonLabel(s, platform)} · ${s.detailText}',
-                ),
-            ],
           ),
         const SizedBox(height: 10),
         if (streams.isEmpty)
