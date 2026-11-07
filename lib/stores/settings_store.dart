@@ -13,11 +13,13 @@ class SettingsStore extends ChangeNotifier {
 
   bool _saveToGallery = true;
   bool _dynamicColor = true;
+  bool _clipboardAuto = true;
   String _dtkBaseUrl = AppConstants.dtkBaseUrl;
   String _dtkApiKey = AppConstants.dtkApiKey;
 
   bool get saveToGallery => _saveToGallery;
   bool get dynamicColor => _dynamicColor;
+  bool get clipboardAuto => _clipboardAuto;
   String get dtkBaseUrl => _dtkBaseUrl;
   String get dtkApiKey => _dtkApiKey;
   bool get dtkConfigured =>
@@ -28,6 +30,7 @@ class SettingsStore extends ChangeNotifier {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       _saveToGallery = prefs.getBool(AppConstants.prefSaveToGallery) ?? true;
       _dynamicColor = prefs.getBool(AppConstants.prefDynamicColor) ?? true;
+      _clipboardAuto = prefs.getBool(AppConstants.prefClipboardAuto) ?? true;
       final String? base = prefs.getString(AppConstants.prefDtkBaseUrl);
       // 空串是用户主动清空的结果，不能回退到内置默认值。
       if (base != null) {
@@ -71,6 +74,18 @@ class SettingsStore extends ChangeNotifier {
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       await prefs.setBool(AppConstants.prefDynamicColor, value);
+    } catch (_) {}
+  }
+
+  Future<void> setClipboardAuto(bool value) async {
+    if (value == _clipboardAuto) {
+      return;
+    }
+    _clipboardAuto = value;
+    notifyListeners();
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(AppConstants.prefClipboardAuto, value);
     } catch (_) {}
   }
 

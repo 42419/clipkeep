@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/services.dart' show Clipboard, ClipboardData;
+import 'package:flutter/services.dart'
+    show Clipboard, ClipboardData, SystemNavigator;
 import 'package:material_ui/material_ui.dart'
     hide CornerRounding, RoundedPolygon;
 import 'package:provider/provider.dart';
@@ -9,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../components/common/clipboard_link_sheet.dart';
 import '../stores/downloader_store.dart';
 import '../stores/main_tab_controller.dart';
+import '../stores/settings_store.dart';
 import 'downloads/downloads_view.dart';
 import 'home/home_view.dart';
 import 'result_page.dart';
@@ -32,7 +34,6 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   bool _sheetShowing = false;
   bool _openingResult = false;
   bool _prefsLoaded = false;
-  bool _autoDetect = true;
   final PageController _pageController = PageController();
   MainTabController? _tabs;
 
@@ -84,7 +85,28 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      unawaited(_checkClipboard());
+      unawaited(_checkClipboardAfterResume());
+    }
+  }
+
+  /// 回前台时窗口未必已获得焦点，Android 10+ 首次读剪贴板常为空；
+  /// 延迟后重试一次，避免“复制后切回来不弹窗”。
+  Future<void> _checkClipboardAfterResume() async {
+    final SettingsStore settings = context.read<SettingsStore>();
+    if (!settings.clipboardAuto) {
+      return;
+    }
+    for (int attempt = 0; attempt < 2; attempt++) {
+      await Future<void>.delayed(
+        Duration(milliseconds: attempt == 0 ? 350 : 500),
+      );
+      if (!mounted) {
+        return;
+      }
+      await _checkClipboard();
+      if (_sheetShowing) {
+        return;
+      }
     }
   }
 
@@ -96,7 +118,8 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
     if (!mounted) {
       return;
     }
-    if (!_autoDetect) {
+    final SettingsStore settings = context.read<SettingsStore>();
+    if (!settings.clipboardAuto) {
       return;
     }
     final ModalRoute<dynamic>? route = ModalRoute.of(context);
@@ -131,8 +154,9 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
     await showClipboardLinkSheet(
       context,
       link: link,
-      autoDetect: _autoDetect,
-      onAutoDetectChanged: _setAutoDetect,
+      autoDetect: settings.clipboardAuto,
+      onAutoDetectChanged: (bool value) =>
+          unawaited(settings.setClipboardAuto(value)),
       onParse: () => _parseFromClipboard(text),
     );
     _sheetShowing = false;
@@ -143,12 +167,13 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
       return;
     }
     _prefsLoaded = true;
+    // 保证从设置页关闭自动检测后，冷启动也不会用默认 true 弹一次。
+    await context.read<SettingsStore>().load();
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       _lastClipboard = prefs.getString('clipboard_last');
-      _autoDetect = prefs.getBool('clipboard_auto') ?? true;
     } catch (_) {
-      // 读取失败忽略，仅影响跨启动去重/开关。
+      // 读取失败忽略，仅影响跨启动去重。
     }
   }
 
@@ -156,20 +181,6 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       await prefs.setString('clipboard_last', value);
-    } catch (_) {
-      // 写入失败忽略。
-    }
-  }
-
-  void _setAutoDetect(bool value) {
-    setState(() => _autoDetect = value);
-    unawaited(_persistAutoDetect(value));
-  }
-
-  Future<void> _persistAutoDetect(bool value) async {
-    try {
-      final SharedPreferences prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('clipboard_auto', value);
     } catch (_) {
       // 写入失败忽略。
     }
@@ -196,42 +207,55 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final MainTabController tab = context.watch<MainTabController>();
-    return Scaffold(
-      body: PageView(
-        controller: _pageController,
-        physics: const NeverScrollableScrollPhysics(),
-        children: const <Widget>[
-          _KeepAlivePage(child: HomeView()),
-          _KeepAlivePage(child: DownloadsView()),
-          _KeepAlivePage(child: SettingsView()),
-        ],
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: tab.index,
-        // drawUnderSystemBars 会清掉 MediaQuery.padding.bottom，
-        // 必须用 viewPadding 才能把图标抬到手势条上方。
-        maintainBottomViewPadding: true,
-        onDestinationSelected: tab.select,
-        destinations: const <NavigationDestination>[
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home_rounded),
-            label: '首页',
-            tooltip: '首页',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.download_outlined),
-            selectedIcon: Icon(Icons.download_rounded),
-            label: '下载',
-            tooltip: '下载',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings_rounded),
-            label: '设置',
-            tooltip: '设置',
-          ),
-        ],
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (didPop) {
+          return;
+        }
+        if (tab.index != 0) {
+          tab.select(0);
+        } else {
+          SystemNavigator.pop();
+        }
+      },
+      child: Scaffold(
+        body: PageView(
+          controller: _pageController,
+          physics: const NeverScrollableScrollPhysics(),
+          children: const <Widget>[
+            _KeepAlivePage(child: HomeView()),
+            _KeepAlivePage(child: DownloadsView()),
+            _KeepAlivePage(child: SettingsView()),
+          ],
+        ),
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: tab.index,
+          // drawUnderSystemBars 会清掉 MediaQuery.padding.bottom，
+          // 必须用 viewPadding 才能把图标抬到手势条上方。
+          maintainBottomViewPadding: true,
+          onDestinationSelected: tab.select,
+          destinations: const <NavigationDestination>[
+            NavigationDestination(
+              icon: Icon(Icons.home_outlined),
+              selectedIcon: Icon(Icons.home_rounded),
+              label: '首页',
+              tooltip: '首页',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.download_outlined),
+              selectedIcon: Icon(Icons.download_rounded),
+              label: '下载',
+              tooltip: '下载',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.settings_outlined),
+              selectedIcon: Icon(Icons.settings_rounded),
+              label: '设置',
+              tooltip: '设置',
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -36,6 +36,7 @@ ParsedSource mapDtkContent(Map<String, dynamic> content) {
   final String webUrl = content['web_url']?.toString() ?? '';
   final int durationMs = _asInt(content['duration_ms']);
   final String? publishDate = _formatDate(content['created_at']);
+  final Map<String, dynamic> stats = _asMap(content['stats']);
 
   final List<MediaStream> streams = _buildStreams(content, media);
   final MediaStream? primary = streams.isNotEmpty ? streams.first : null;
@@ -64,6 +65,7 @@ ParsedSource mapDtkContent(Map<String, dynamic> content) {
     author: authorName,
     coverUrl: cover ?? (images.isNotEmpty ? images.first.primaryUrl : null),
     publishDate: publishDate,
+    likeCount: _asIntOrNull(stats['digg_count']),
     authorAvatarUrl: avatar,
     platform: content['platform']?.toString() ?? 'douyin',
     sourceUrl: webUrl.isNotEmpty ? webUrl : null,

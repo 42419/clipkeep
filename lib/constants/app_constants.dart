@@ -11,6 +11,9 @@ class AppConstants {
   /// 设置项：是否跟随系统壁纸动态取色。
   static const String prefDynamicColor = 'settings_dynamic_color';
 
+  /// 设置项：回到前台时是否自动检测剪贴板链接。
+  static const String prefClipboardAuto = 'clipboard_auto';
+
   /// 抖音解析服务（DTK）地址，构建期通过 --dart-define 注入（CI Secrets），仓库不留明文。
   static const String dtkBaseUrl = String.fromEnvironment('DTK_BASE_URL');
 

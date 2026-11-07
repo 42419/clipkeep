@@ -1,18 +1,23 @@
 import 'package:material_3_expressive/material_3_expressive.dart';
 
+import 'dart:async';
 import 'dart:ui' as ui;
 
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:material_ui/material_ui.dart'
     hide CornerRounding, RoundedPolygon;
 import 'package:provider/provider.dart';
 import 'package:soft_edge_blur/soft_edge_blur.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../stores/downloader_store.dart';
+import '../utils/format.dart';
 import '../utils/image_headers.dart';
 import '../utils/result.dart';
 import '../theme/app_theme.dart';
 import '../viewmodels/download_task.dart';
 import '../viewmodels/parsed_source.dart';
+import 'login/bilibili_login_page.dart';
 
 /// 二级页面：解析结果（含加载骨架屏 / 错误态）。
 class ResultPage extends StatefulWidget {
@@ -33,6 +38,7 @@ class _ResultPageState extends State<ResultPage> {
   bool _imageSaving = false;
   double _imageProgress = 0;
   String? _imagePhase;
+  String? _notifiedTaskId;
 
   @override
   void dispose() {
@@ -48,9 +54,13 @@ class _ResultPageState extends State<ResultPage> {
     final source = store.source;
     final bool loading =
         store.parsing || (source == null && store.error == null);
+    final int partIndex = source == null || source.parts.isEmpty
+        ? 0
+        : store.partIndex.clamp(0, source.parts.length - 1);
     final MediaPart? part = (source != null && source.parts.isNotEmpty)
-        ? source.parts.first
+        ? source.parts[partIndex]
         : null;
+    _maybeNotifyTask(store);
 
     return Scaffold(
       backgroundColor: scheme.surface,
@@ -58,6 +68,7 @@ class _ResultPageState extends State<ResultPage> {
         titleText: '解析结果',
         automaticallyImplyLeading: true,
         toolbarHeight: 64,
+        actions: <Widget>[_buildMoreMenu(store)],
       ),
       body: SafeArea(
         top: false,
@@ -111,7 +122,14 @@ class _ResultPageState extends State<ResultPage> {
                             )
                           : KeyedSubtree(
                               key: const ValueKey<String>('content'),
-                              child: _buildContent(theme, scheme, source, part),
+                              child: _buildContent(
+                                theme,
+                                scheme,
+                                source,
+                                part,
+                                store,
+                                partIndex,
+                              ),
                             )),
               ),
             ),
@@ -183,11 +201,41 @@ class _ResultPageState extends State<ResultPage> {
   }
 
   // ---------- 错误态 ----------
+  void _maybeNotifyTask(DownloaderStore store) {
+    final String? id = _activeTaskId;
+    if (id == null || id == _notifiedTaskId) {
+      return;
+    }
+    final DownloadTask? task = store.taskById(id);
+    if (task == null || (!task.isCompleted && !task.isFailed)) {
+      return;
+    }
+    _notifiedTaskId = task.id;
+    final String message = task.isCompleted
+        ? (task.savedMessage ?? '下载完成')
+        : '下载失败：${task.error ?? '未知错误'}';
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+      messenger.clearSnackBars();
+      messenger.showSnackBar(SnackBar(content: Text(message)));
+    });
+  }
+
   Widget _buildError(
     ThemeData theme,
     ColorScheme scheme,
     DownloaderStore store,
   ) {
+    final String? error = store.error;
+    final bool needLogin =
+        error != null &&
+        (error.contains('登录') ||
+            error.contains('-101') ||
+            error.contains('HTTP 401') ||
+            error.contains('SESSDATA'));
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -197,24 +245,51 @@ class _ResultPageState extends State<ResultPage> {
             Icon(Icons.error_outline, size: 56, color: scheme.onSurfaceVariant),
             const SizedBox(height: 12),
             Text(
-              store.error ?? '解析失败',
+              error ?? '解析失败',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: scheme.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: 20),
-            M3EButton.filled(
-              onPressed: () => store.retry(),
-              size: M3EButtonSize.md,
-              icon: const Icon(Icons.refresh),
-              label: const Text('重试'),
-              tooltip: '重试',
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
+              children: <Widget>[
+                M3EButton.filled(
+                  onPressed: () => store.retry(),
+                  size: M3EButtonSize.md,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('重试'),
+                  tooltip: '重试',
+                ),
+                if (needLogin)
+                  M3EButton.tonal(
+                    onPressed: () => _openLogin(store),
+                    size: M3EButtonSize.md,
+                    icon: const Icon(Icons.login),
+                    label: const Text('去登录'),
+                    tooltip: '登录后重新解析',
+                  ),
+              ],
             ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _openLogin(DownloaderStore store) async {
+    final bool? ok = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(
+        builder: (BuildContext context) => const BilibiliLoginPage(),
+      ),
+    );
+    if (!mounted || ok != true) {
+      return;
+    }
+    await store.retry();
   }
 
   // ---------- 内容 ----------
@@ -531,11 +606,73 @@ class _ResultPageState extends State<ResultPage> {
     }
   }
 
+  Widget _buildMoreMenu(DownloaderStore store) {
+    final String? url = store.source?.sourceUrl;
+    return M3EMenu(
+      position: M3EMenuAnchorPosition.bottomEnd,
+      anchorBuilder: (BuildContext context, VoidCallback open) => M3EIconButton(
+        icon: const Icon(Icons.more_vert),
+        tooltip: '更多',
+        onPressed: open,
+      ),
+      entries: <M3EMenuEntry>[
+        M3EMenuEntry(
+          label: '复制原链接',
+          leading: const Icon(Icons.link_rounded),
+          enabled: url != null,
+          onPressed: url == null ? null : () => _copySource(url),
+        ),
+        M3EMenuEntry(
+          label: '在浏览器打开',
+          leading: const Icon(Icons.open_in_new_rounded),
+          enabled: url != null,
+          onPressed: url == null ? null : () => _openSource(url),
+        ),
+        M3EMenuEntry(
+          label: '重新解析',
+          leading: const Icon(Icons.refresh_rounded),
+          onPressed: () => unawaited(store.retry()),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _copySource(String url) async {
+    await Clipboard.setData(ClipboardData(text: url));
+    if (!mounted) {
+      return;
+    }
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    messenger.clearSnackBars();
+    messenger.showSnackBar(const SnackBar(content: Text('原链接已复制')));
+  }
+
+  Future<void> _openSource(String url) async {
+    try {
+      final bool opened = await launchUrl(
+        Uri.parse(url),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!opened) {
+        throw Exception('无法打开浏览器');
+      }
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+      messenger.clearSnackBars();
+      messenger.showSnackBar(SnackBar(content: Text('打开原链接失败：$e')));
+    }
+  }
+
   Widget _buildContent(
     ThemeData theme,
     ColorScheme scheme,
     ParsedSource source,
     MediaPart? part,
+    DownloaderStore store,
+    int partIndex,
   ) {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
@@ -550,12 +687,90 @@ class _ResultPageState extends State<ResultPage> {
         ),
         const SizedBox(height: 16),
         _buildAuthor(theme, scheme, source),
+        if (source.parts.length > 1) ...<Widget>[
+          const SizedBox(height: 16),
+          _buildPartSelector(theme, scheme, source, store, partIndex),
+        ],
         const SizedBox(height: 16),
         _buildQuality(theme, scheme, part, source.platform),
         const SizedBox(height: 16),
         _buildOptions(theme, scheme),
       ],
     );
+  }
+
+  Widget _buildPartSelector(
+    ThemeData theme,
+    ColorScheme scheme,
+    ParsedSource source,
+    DownloaderStore store,
+    int selected,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          '分 P',
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 8),
+        M3EButtonGroup(
+          type: M3EButtonGroupType.connected,
+          direction: Axis.horizontal,
+          shape: M3EButtonShape.square,
+          size: M3EButtonSize.sm,
+          selectedIndex: selected,
+          selectionRequired: true,
+          style: M3EButtonStyle.tonal,
+          overflow: M3EButtonGroupOverflow.menu,
+          spacing: 5,
+          onSelectedIndexChanged: (int? index) {
+            if (index == null || index == selected || store.partLoading) {
+              return;
+            }
+            unawaited(_changePart(store, index));
+          },
+          actions: <M3EButtonGroupAction>[
+            for (int i = 0; i < source.parts.length; i++)
+              M3EButtonGroupAction(
+                label: Text('P${i + 1}'),
+                tooltip: source.parts[i].title.isEmpty
+                    ? 'P${i + 1}'
+                    : 'P${i + 1}：${source.parts[i].title}',
+              ),
+          ],
+        ),
+        if (store.partLoading) ...<Widget>[
+          const SizedBox(height: 8),
+          M3EProgressIndicator.linearWavy(value: 0),
+          const SizedBox(height: 4),
+          Text(
+            '正在加载分 P 画质…',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Future<void> _changePart(DownloaderStore store, int index) async {
+    final Result<MediaPart> result = await store.selectPart(index);
+    if (!mounted) {
+      return;
+    }
+    if (result is Ok<MediaPart>) {
+      setState(() => _qualityIndex = 0);
+      return;
+    }
+    if (result is Err<MediaPart>) {
+      final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+      messenger.clearSnackBars();
+      messenger.showSnackBar(SnackBar(content: Text(result.error.message)));
+    }
   }
 
   Widget _buildCover(
@@ -792,11 +1007,17 @@ class _ResultPageState extends State<ResultPage> {
     ColorScheme scheme,
     ParsedSource source,
   ) {
-    final author = source.author.isEmpty ? '未知作者' : source.author;
-    final name = author.startsWith('@') ? author : '@$author';
-    final date = source.publishDate ?? '';
-    final String platformName = source.platformLabel;
-    final meta = date.isEmpty ? platformName : '$date · $platformName';
+    final String author = source.author.isEmpty ? '未知作者' : source.author;
+    final String name = author.startsWith('@') ? author : '@$author';
+    final String date = source.publishDate ?? '';
+    final int? likes = source.likeCount;
+    final List<String> metaParts = <String>[
+      if (date.isNotEmpty) date,
+      if (likes != null && likes > 0) '赞 ${formatCount(likes)}',
+    ];
+    final String meta = metaParts.isEmpty
+        ? source.platformLabel
+        : metaParts.join(' · ');
     return Row(
       children: <Widget>[
         _buildAvatar(source, scheme),
@@ -1233,6 +1454,7 @@ class _ResultPageState extends State<ResultPage> {
       sourceUrl: store.source?.sourceUrl ?? part.id,
     );
     setState(() => _activeTaskId = task.id);
+    _notifiedTaskId = null;
     messenger.clearSnackBars();
     messenger.showSnackBar(const SnackBar(content: Text('已开始下载，可在「下载」页查看进度')));
   }

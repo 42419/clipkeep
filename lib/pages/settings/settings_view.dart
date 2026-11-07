@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:material_3_expressive/material_3_expressive.dart';
 import 'package:material_ui/material_ui.dart'
     hide CornerRounding, RoundedPolygon;
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
 import '../../api/dtk_client.dart';
@@ -51,6 +54,8 @@ class SettingsView extends StatelessWidget {
               onTap: (int index) {
                 if (index == 0) {
                   _showSaveLocation(context, settings);
+                } else {
+                  settings.setSaveToGallery(!settings.saveToGallery);
                 }
               },
               itemBuilder: (BuildContext context, int index) {
@@ -81,6 +86,27 @@ class SettingsView extends StatelessWidget {
               },
             ),
             const SizedBox(height: 24),
+            _sectionLabel(theme, scheme, '剪贴板'),
+            const SizedBox(height: 10),
+            M3EList(
+              color: scheme.surfaceContainerLow,
+              itemCount: 1,
+              onTap: (_) => settings.setClipboardAuto(!settings.clipboardAuto),
+              itemBuilder: (BuildContext context, int index) {
+                return M3EListItem(
+                  leading: const Icon(Icons.content_paste_rounded),
+                  headline: '自动检测剪贴板',
+                  supportingText: '回到 App 时自动识别复制的分享链接',
+                  trailing: M3ESwitch(
+                    value: settings.clipboardAuto,
+                    selectedIcon: const Icon(M3EIcons.check),
+                    semanticLabel: '自动检测剪贴板',
+                    onChanged: (bool v) => settings.setClipboardAuto(v),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 24),
             _sectionLabel(theme, scheme, '解析服务（抖音）'),
             const SizedBox(height: 10),
             const _DtkServiceCard(),
@@ -89,9 +115,11 @@ class SettingsView extends StatelessWidget {
             const SizedBox(height: 10),
             M3EList(
               color: scheme.surfaceContainerLow,
-              itemCount: 2,
+              itemCount: 3,
               onTap: (int index) {
-                if (index == 1) {
+                if (index == 0) {
+                  settings.setDynamicColor(!settings.dynamicColor);
+                } else if (index == 1) {
                   _openLicenses(context);
                 }
               },
@@ -108,6 +136,9 @@ class SettingsView extends StatelessWidget {
                       onChanged: (bool v) => settings.setDynamicColor(v),
                     ),
                   );
+                }
+                if (index == 2) {
+                  return _versionItem(theme, scheme);
                 }
                 return M3EListItem(
                   leading: const Icon(Icons.description_rounded),
@@ -352,19 +383,63 @@ class SettingsView extends StatelessWidget {
     );
   }
 
+  Widget _versionItem(ThemeData theme, ColorScheme scheme) {
+    return FutureBuilder<PackageInfo>(
+      future: PackageInfo.fromPlatform(),
+      builder: (BuildContext context, AsyncSnapshot<PackageInfo> snapshot) {
+        final PackageInfo? info = snapshot.data;
+        return M3EListItem(
+          leading: const Icon(Icons.info_outline_rounded),
+          headline: '版本',
+          supportingText: info == null
+              ? '1.0.0'
+              : '${info.version} (${info.buildNumber})',
+          trailing: Text(
+            'GPL-3.0',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   void _showSnack(BuildContext context, String message) {
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
     messenger.clearSnackBars();
     messenger.showSnackBar(SnackBar(content: Text(message)));
   }
 
-  void _showSaveLocation(BuildContext context, SettingsStore settings) {
-    _showSnack(
+  Future<void> _showSaveLocation(
+    BuildContext context,
+    SettingsStore settings,
+  ) async {
+    final bool? choice = await M3EDialog.show<bool>(
       context,
-      settings.saveToGallery
-          ? '当前保存到相册（${AppConstants.albumName}）'
-          : '当前保存到系统下载目录（Download/ClipKeep）',
+      dialog: M3EDialog(
+        title: '保存位置',
+        icon: const Icon(Icons.folder_rounded),
+        content: const Text('选择下载完成后的保存位置。'),
+        actions: <Widget>[
+          M3EButton.text(
+            onPressed: () => Navigator.of(context).pop(false),
+            size: M3EButtonSize.md,
+            tooltip: '系统下载目录',
+            child: const Text('系统下载目录'),
+          ),
+          M3EButton.filled(
+            onPressed: () => Navigator.of(context).pop(true),
+            size: M3EButtonSize.md,
+            tooltip: '相册',
+            child: const Text('相册'),
+          ),
+        ],
+      ),
     );
+    if (choice != null) {
+      await settings.setSaveToGallery(choice);
+    }
   }
 
   Future<void> _openLogin(BuildContext context) async {
