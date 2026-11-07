@@ -36,17 +36,18 @@ class _BilibiliLoginPageState extends State<BilibiliLoginPage> {
     'sid',
   ];
   static const List<String> _cookieUrls = <String>[
+    'https://passport.bilibili.com',
     'https://www.bilibili.com',
     'https://bilibili.com',
-    'https://passport.bilibili.com',
-    'https://api.bilibili.com',
     'https://m.bilibili.com',
+    'https://api.bilibili.com',
   ];
 
   late final WebViewController _web;
   Timer? _poll;
   String _currentUrl = BilibiliLoginPage.loginUrl;
   String? _cookie;
+  String? _lastFailedCookie;
   bool _detected = false;
   bool _pageReady = false;
   bool _saving = false;
@@ -151,7 +152,12 @@ class _BilibiliLoginPageState extends State<BilibiliLoginPage> {
         parts.add('$key=$value');
       }
     }
-    _cookie = parts.join('; ');
+    final String joined = parts.join('; ');
+    if (joined == _lastFailedCookie) {
+      // 同一份无效 Cookie 不再反复自动校验/重启轮询。
+      return;
+    }
+    _cookie = joined;
     _poll?.cancel();
     unawaited(_flushCookies());
     if (mounted) {
@@ -178,7 +184,8 @@ class _BilibiliLoginPageState extends State<BilibiliLoginPage> {
           }
           final String key = item.substring(0, eq).trim();
           if (_cookieKeys.contains(key)) {
-            out[key] = item.substring(eq + 1).trim();
+            // 按 _cookieUrls 优先级取第一个非空值，避免旧域覆盖新登录态。
+            out.putIfAbsent(key, () => item.substring(eq + 1).trim());
           }
         }
       } catch (_) {
@@ -210,7 +217,12 @@ class _BilibiliLoginPageState extends State<BilibiliLoginPage> {
     if (ok) {
       Navigator.of(context).pop(true);
     } else {
-      setState(() => _saving = false);
+      _lastFailedCookie = cookie;
+      _cookie = null;
+      setState(() {
+        _saving = false;
+        _detected = false;
+      });
       final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
       messenger.clearSnackBars();
       messenger.showSnackBar(const SnackBar(content: Text('登录校验失败，请重试或重新登录')));

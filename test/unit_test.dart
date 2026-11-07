@@ -291,6 +291,38 @@ void main() {
     });
   });
 
+  group('画质选择', () {
+    const MediaPart part = MediaPart(
+      id: 'BV-test-1',
+      title: '测试',
+      durationSeconds: 10,
+      streams: <MediaStream>[
+        MediaStream(
+          kind: 'video',
+          quality: 720,
+          codec: 'avc',
+          urls: <String>['https://example.com/720.mp4'],
+          headers: <String, String>{},
+        ),
+        MediaStream(
+          kind: 'video',
+          quality: 1080,
+          codec: 'avc',
+          urls: <String>['https://example.com/1080.mp4'],
+          headers: <String, String>{},
+        ),
+      ],
+    );
+
+    test('指定画质存在时精确命中', () {
+      expect(part.pickVideoQuality(1080)?.quality, 1080);
+    });
+
+    test('刷新后指定画质不存在时不静默换档', () {
+      expect(part.pickVideoQuality(999), isNull);
+    });
+  });
+
   group('任务持久化', () {
     test('未完成任务保留 ID/画质/选项，重启后流需重新拉取', () {
       final DownloadTask task = DownloadTask(

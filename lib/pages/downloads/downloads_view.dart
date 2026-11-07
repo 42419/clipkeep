@@ -160,10 +160,16 @@ class _DownloadsViewState extends State<DownloadsView> {
               child: AnimatedOpacity(
                 duration: const Duration(milliseconds: 250),
                 opacity: _showClearFab ? 1 : 0,
-                child: M3EFab(
-                  onPressed: () => _confirmClearCompleted(store),
-                  icon: const Icon(Icons.delete_outline),
-                  tooltip: '清空已完成',
+                child: IgnorePointer(
+                  ignoring: !_showClearFab,
+                  child: ExcludeSemantics(
+                    excluding: !_showClearFab,
+                    child: M3EFab(
+                      onPressed: () => _confirmClearCompleted(store),
+                      icon: const Icon(Icons.delete_outline),
+                      tooltip: '清空已完成',
+                    ),
+                  ),
                 ),
               ),
             )

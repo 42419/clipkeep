@@ -14,12 +14,14 @@ class SettingsStore extends ChangeNotifier {
   bool _saveToGallery = true;
   bool _dynamicColor = true;
   bool _clipboardAuto = true;
+  bool _loaded = false;
   String _dtkBaseUrl = AppConstants.dtkBaseUrl;
   String _dtkApiKey = AppConstants.dtkApiKey;
 
   bool get saveToGallery => _saveToGallery;
   bool get dynamicColor => _dynamicColor;
   bool get clipboardAuto => _clipboardAuto;
+  bool get isLoaded => _loaded;
   String get dtkBaseUrl => _dtkBaseUrl;
   String get dtkApiKey => _dtkApiKey;
   bool get dtkConfigured =>
@@ -50,6 +52,7 @@ class SettingsStore extends ChangeNotifier {
     } catch (_) {
       // 安全存储读取失败按空处理。
     }
+    _loaded = true;
     notifyListeners();
   }
 

@@ -30,40 +30,6 @@ class MediaDownloader {
     'clipkeep/media_store',
   );
 
-  String? _cookie;
-
-  Map<String, String> _withCookie(Map<String, String> base, {String? url}) {
-    final String? cookie = _cookie;
-    if (cookie == null || cookie.isEmpty || !_isBiliHost(url)) {
-      return base;
-    }
-    return <String, String>{...base, 'cookie': cookie};
-  }
-
-  /// 只把 B 站 Cookie 发给 B 站域名，避免把登录凭据泄露给抖音等第三方 CDN。
-  /// 必须按 host 的后缀匹配：`contains('bilibili.com')` 会把
-  /// `bilibili.com.evil.example` 或带该字样的路径也算作 B 站。
-  bool _isBiliHost(String? url) {
-    final String host = (Uri.tryParse(url ?? '')?.host ?? '').toLowerCase();
-    if (host.isEmpty) {
-      return false;
-    }
-    for (final String domain in _biliDomains) {
-      if (host == domain || host.endsWith('.$domain')) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  static const List<String> _biliDomains = <String>[
-    'bilibili.com',
-    'bilivideo.com',
-    'hdslb.com',
-    'b23.tv',
-    'bili2233.cn',
-  ];
-
   /// 把异常转成简短可读文案，便于在下载失败卡片上定位问题。
   String _describe(Object e) {
     if (e is DioException) {
@@ -86,7 +52,8 @@ class MediaDownloader {
     CancelToken? cancelToken,
     void Function(DownloadProgress progress)? onProgress,
   }) async {
-    _cookie = cookie;
+    // Cookie 只用于解析 API；媒体 CDN 的签名 URL 不需要凭据，
+    // 也避免把 SESSDATA 发给第三方 CDN。
     bool saveToGallery = true;
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -240,7 +207,14 @@ class MediaDownloader {
         token.whenCancel.then((_) => FFmpegKit.cancel(session.getSessionId())),
       );
     }
-    final ReturnCode? returnCode = await merge.future;
+    final ReturnCode? returnCode;
+    try {
+      returnCode = await merge.future.timeout(const Duration(minutes: 5));
+    } on TimeoutException {
+      await FFmpegKit.cancel(session.getSessionId());
+      await _cleanupQuietly(<String>[outputPath]);
+      return const Err(AppError('音视频合并超时，请重试'));
+    }
     if (cancelToken?.isCancelled ?? false) {
       await _cleanupQuietly(<String>[outputPath]);
       return const Err(AppError('已暂停'));
@@ -359,12 +333,18 @@ class MediaDownloader {
           tempImage,
           (String url) => imageHeadersFor(url),
         );
+        if (!await _isImageFile(tempImage)) {
+          throw Exception('图片地址返回的不是有效图片');
+        }
 
         final MediaStream? live = image.liveVideo;
         bool motionSaved = false;
         if (live != null && live.primaryUrl.isNotEmpty) {
           tempVideo = '${dir.path}/clipkeep_live_${stamp}_$i.mp4';
           await _downloadFile(live.urls, tempVideo, (_) => live.headers);
+          if (!await _isMp4File(tempVideo)) {
+            throw Exception('实况视频地址返回的不是有效 MP4');
+          }
           // 先尝试合成 Motion Photo；插件要求 JPG，WebP 等先转码。
           try {
             String jpgPath = tempImage;
@@ -516,6 +496,61 @@ class MediaDownloader {
       }
     }
     throw last ?? Exception('没有可用的下载地址');
+  }
+
+  Future<bool> _isImageFile(String path) async {
+    try {
+      final File file = File(path);
+      if (!await file.exists() || await file.length() < 12) {
+        return false;
+      }
+      final RandomAccessFile raf = await file.open();
+      try {
+        final List<int> b = await raf.read(12);
+        if (b[0] == 0xFF && b[1] == 0xD8) {
+          return true; // JPEG
+        }
+        if (b[0] == 0x89 && b[1] == 0x50 && b[2] == 0x4E && b[3] == 0x47) {
+          return true; // PNG
+        }
+        if (b[0] == 0x47 && b[1] == 0x49 && b[2] == 0x46) {
+          return true; // GIF
+        }
+        return b[0] == 0x52 &&
+            b[1] == 0x49 &&
+            b[2] == 0x46 &&
+            b[3] == 0x46 &&
+            b[8] == 0x57 &&
+            b[9] == 0x45 &&
+            b[10] == 0x42 &&
+            b[11] == 0x50; // WebP
+      } finally {
+        await raf.close();
+      }
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> _isMp4File(String path) async {
+    try {
+      final File file = File(path);
+      if (!await file.exists() || await file.length() < 12) {
+        return false;
+      }
+      final RandomAccessFile raf = await file.open();
+      try {
+        final List<int> b = await raf.read(12);
+        return b[4] == 0x66 &&
+            b[5] == 0x74 &&
+            b[6] == 0x79 &&
+            b[7] == 0x70; // ftyp
+      } finally {
+        await raf.close();
+      }
+    } catch (_) {
+      return false;
+    }
   }
 
   String _imageExt(String url) {
@@ -723,7 +758,7 @@ class MediaDownloader {
         coverPath,
         cancelToken: cancelToken,
         options: Options(
-          headers: _withCookie(imageHeadersFor(url), url: url),
+          headers: imageHeadersFor(url),
           receiveTimeout: const Duration(minutes: 5),
         ),
         onReceiveProgress: (int received, int total) {
@@ -785,7 +820,7 @@ class MediaDownloader {
         url,
         coverPath,
         options: Options(
-          headers: _withCookie(imageHeadersFor(url), url: url),
+          headers: imageHeadersFor(url),
           receiveTimeout: const Duration(minutes: 5),
         ),
       );
@@ -824,14 +859,13 @@ class MediaDownloader {
     String mime,
   ) async {
     try {
-      return await _mediaStore.invokeMethod<String>(
-        'saveFile',
-        <String, String>{
-          'path': path,
-          'displayName': displayName,
-          'mime': mime,
-        },
-      );
+      return await _mediaStore
+          .invokeMethod<String>('saveFile', <String, String>{
+            'path': path,
+            'displayName': displayName,
+            'mime': mime,
+          })
+          .timeout(const Duration(minutes: 2));
     } catch (_) {
       return null;
     }
@@ -965,6 +999,11 @@ class MediaDownloader {
           rethrow;
         }
         lastError = e;
+        // 不同镜像不能续接同一临时文件，失败后清掉残留，下一地址从零开始。
+        await _cleanupQuietly(<String>[
+          destination,
+          for (int i = 0; i < 64; i++) '$destination.part$i',
+        ]);
       }
     }
     throw lastError ?? Exception('全部下载地址均失败');
@@ -988,12 +1027,17 @@ class MediaDownloader {
     final int? total = probe.total;
 
     // 已完成（例如另一个流失败后重试）直接跳过，避免重复下载。
+    // 只有服务端确认支持 Range 且长度完全相等时才信任旧文件；
+    // 200 的 Content-Length 可能来自 HTML 错误页，不能用于“已完成”判断。
     final int destExisting = await _existingLength(destination);
-    if (total != null && destExisting >= total) {
+    if (probe.supported && total != null && destExisting == total) {
       agg.beginStream(key, total, initial: total);
       agg.updateStream(key, total, total);
       onProgress?.call(agg.snapshot());
       return;
+    }
+    if (destExisting > 0 && (total == null || destExisting > total)) {
+      await _cleanupQuietly(<String>[destination]);
     }
 
     if (probe.supported && total != null && total > threshold) {
@@ -1013,8 +1057,9 @@ class MediaDownloader {
         if (cancelToken?.isCancelled ?? false) {
           rethrow;
         }
-        // 分片失败：清掉分片后回退单连接（同一地址）。
+        // 分片失败：清掉分片与旧目标，回退单连接（同一地址）。
         await _cleanupQuietly(<String>[
+          destination,
           for (int i = 0; i < 64; i++) '$destination.part$i',
         ]);
       }
@@ -1040,6 +1085,7 @@ class MediaDownloader {
         agg.updateStream(key, received, total ?? 0);
         onProgress?.call(agg.snapshot());
       },
+      expectedLength: total,
     );
   }
 
@@ -1115,6 +1161,7 @@ class MediaDownloader {
             onProgress?.call(agg.snapshot());
           },
           rangeFrom: from,
+          expectedLength: expected,
         ),
       );
     }
@@ -1158,10 +1205,11 @@ class MediaDownloader {
     CancelToken? cancelToken,
     void Function(int received) onProgress, {
     int? rangeFrom,
+    int? expectedLength,
   }) async {
     final int from = rangeFrom ?? existing;
     final Map<String, String> requestHeaders = <String, String>{
-      ..._withCookie(headers, url: url),
+      ...headers,
       if (to != null)
         'Range': 'bytes=$from-$to'
       else if (from > 0)
@@ -1182,6 +1230,13 @@ class MediaDownloader {
     if (rangeFrom != null && !honorsRange) {
       throw Exception('服务端不支持分段');
     }
+    final String contentType = (res.headers.value('content-type') ?? '')
+        .toLowerCase();
+    if (contentType.contains('text/html') ||
+        contentType.contains('application/json') ||
+        contentType.contains('text/plain')) {
+      throw Exception('下载地址返回了错误页（$contentType）');
+    }
     final bool append = existing > 0 && honorsRange;
     final IOSink sink = File(path)
         .openWrite(mode: append ? FileMode.append : FileMode.write);
@@ -1195,6 +1250,9 @@ class MediaDownloader {
       await sink.flush();
     } finally {
       await sink.close();
+    }
+    if (expectedLength != null && received != expectedLength) {
+      throw Exception('下载长度不完整：$received/$expectedLength 字节');
     }
   }
 
@@ -1212,15 +1270,19 @@ class MediaDownloader {
         cancelToken: cancelToken,
         options: Options(
           responseType: ResponseType.stream,
-          headers: <String, String>{
-            ..._withCookie(headers, url: url),
-            'Range': 'bytes=0-0',
-          },
+          headers: <String, String>{...headers, 'Range': 'bytes=0-0'},
           validateStatus: (int? status) => status != null && status < 500,
           receiveTimeout: const Duration(seconds: 20),
         ),
       );
       subscription = res.data?.stream.listen(null);
+      final String contentType = (res.headers.value('content-type') ?? '')
+          .toLowerCase();
+      if (contentType.contains('text/html') ||
+          contentType.contains('application/json') ||
+          contentType.contains('text/plain')) {
+        throw Exception('探测下载地址返回了错误页（$contentType）');
+      }
       final String? contentRange = res.headers.value('content-range');
       if (res.statusCode == 206) {
         if (contentRange == null) {
@@ -1230,15 +1292,17 @@ class MediaDownloader {
         final String totalPart = contentRange.split('/').last;
         return (supported: true, total: int.tryParse(totalPart));
       }
-      final int? length = int.tryParse(
-        res.headers.value('content-length') ?? '',
-      );
-      return (
-        supported: false,
-        total: (length != null && length > 0) ? length : null,
-      );
-    } catch (_) {
-      return (supported: false, total: null);
+      if (res.statusCode == 200) {
+        final int? length = int.tryParse(
+          res.headers.value('content-length') ?? '',
+        );
+        return (
+          supported: false,
+          total: (length != null && length > 0) ? length : null,
+        );
+      }
+      // 403/404/416 等错误页不能当成视频长度，交给调用方换地址或报错。
+      throw Exception('探测下载地址失败：HTTP ${res.statusCode}');
     } finally {
       await subscription?.cancel();
     }

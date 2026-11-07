@@ -155,6 +155,12 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        awaitingPermission = false
+        val queue = pendingSaves.toList()
+        pendingSaves.clear()
+        queue.forEach {
+            it.result.error("activity_destroyed", "页面已销毁，保存未完成", null)
+        }
         saveExecutor.shutdown()
         super.onDestroy()
     }
@@ -198,14 +204,33 @@ class MainActivity : FlutterActivity() {
         if (!downloadsDir.exists() && !downloadsDir.mkdirs()) {
             return null
         }
-        val dest = File(downloadsDir, displayName)
-        source.copyTo(dest, overwrite = true)
+        // Android 7~9：先写临时文件，成功后改名，避免半截文件或覆盖用户已有文件。
+        val dot = displayName.lastIndexOf('.')
+        val base = if (dot > 0) displayName.substring(0, dot) else displayName
+        val ext = if (dot > 0) displayName.substring(dot) else ""
+        var dest = File(downloadsDir, displayName)
+        var suffix = 1
+        while (dest.exists()) {
+            dest = File(downloadsDir, "$base ($suffix)$ext")
+            suffix += 1
+        }
+        val temp = File(downloadsDir, ".$displayName.part")
+        try {
+            source.copyTo(temp, overwrite = true)
+            if (!temp.renameTo(dest)) {
+                temp.delete()
+                return null
+            }
+        } catch (e: Exception) {
+            temp.delete()
+            throw e
+        }
         MediaScannerConnection.scanFile(
             applicationContext,
             arrayOf(dest.absolutePath),
             arrayOf(mime),
             null,
         )
-        return "$relative/$displayName"
+        return "$relative/${dest.name}"
     }
 }

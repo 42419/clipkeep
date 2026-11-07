@@ -47,7 +47,7 @@ class DownloaderApi {
         final DtkConfig? config = dtkConfig?.call();
         if (config == null || !config.isConfigured) {
           return const Err(
-            AppError('未配置抖音解析服务：请到「设置 → 解析服务（抖音）」填写服务器地址与 API Key'),
+            AppError('当前构建未内置抖音解析服务（缺少 DTK_BASE_URL / DTK_API_KEY，需构建时注入）'),
           );
         }
         // 传归一化结果：裸 aweme_id 会被转成抖音视频页，分享文案则提取出 URL。
@@ -60,8 +60,17 @@ class DownloaderApi {
       return Ok(source);
     } on BiliResolveException catch (e) {
       return Err(AppError(e.message, cause: e));
+    } on DioException catch (e) {
+      final int? code = e.response?.statusCode;
+      if (code == 412 || code == 429) {
+        return Err(AppError('请求过于频繁（HTTP $code），请稍后重试', cause: e));
+      }
+      if (code != null) {
+        return Err(AppError('网络请求失败（HTTP $code）', cause: e));
+      }
+      return Err(AppError('网络连接失败：${e.type.name}', cause: e));
     } catch (e) {
-      return Err(AppError('解析失败', cause: e));
+      return Err(AppError('解析失败：${e.runtimeType}', cause: e));
     }
   }
 
@@ -87,7 +96,11 @@ class DownloaderApi {
       final String path = '${covers.path}/$id.jpg';
       final File file = File(path);
       if (await file.exists() && await file.length() > 0) {
-        return path;
+        // 旧版本可能把 HTML/403 错误页写进缓存，必须校验图片头后再复用。
+        if (_looksLikeImage(await file.readAsBytes())) {
+          return path;
+        }
+        await file.delete();
       }
       final Response<List<int>> res = await _http.get<List<int>>(
         url,
@@ -98,14 +111,49 @@ class DownloaderApi {
         ),
       );
       final List<int>? data = res.data;
-      if (data == null || data.isEmpty) {
+      if (data == null || data.isEmpty || !_looksLikeImage(data)) {
         return null;
       }
-      await file.writeAsBytes(data);
+      final File temp = File('$path.tmp');
+      await temp.writeAsBytes(data, flush: true);
+      await temp.rename(path);
       return path;
     } catch (_) {
       return null;
     }
+  }
+
+  bool _looksLikeImage(List<int> bytes) {
+    if (bytes.length < 12) {
+      return false;
+    }
+    // JPEG
+    if (bytes[0] == 0xFF && bytes[1] == 0xD8) {
+      return true;
+    }
+    // PNG
+    if (bytes[0] == 0x89 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x4E &&
+        bytes[3] == 0x47) {
+      return true;
+    }
+    // GIF
+    if (bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46) {
+      return true;
+    }
+    // WebP: RIFF....WEBP
+    if (bytes[0] == 0x52 &&
+        bytes[1] == 0x49 &&
+        bytes[2] == 0x46 &&
+        bytes[3] == 0x46 &&
+        bytes[8] == 0x57 &&
+        bytes[9] == 0x45 &&
+        bytes[10] == 0x42 &&
+        bytes[11] == 0x50) {
+      return true;
+    }
+    return false;
   }
 
   String? _normalizeImageUrl(String? raw) {
@@ -129,7 +177,10 @@ class DownloaderApi {
   }
 
   static final RegExp _urlPattern = RegExp(r'https?://[^\s]+');
-  static final RegExp _bvPattern = RegExp(r'BV[0-9A-Za-z]{10}');
+  static final RegExp _bvPattern = RegExp(
+    r'BV[0-9A-Za-z]{10}',
+    caseSensitive: false,
+  );
   static final RegExp _trailingPunctuation = RegExp(r'[),.;!?，。；！？、）】》」』]+$');
 
   /// 把用户输入归一化为可解析形式：完整链接、含标题的分享文本、b23 短链都可。
@@ -140,7 +191,7 @@ class DownloaderApi {
     if (match == null) {
       final RegExpMatch? bv = _bvPattern.firstMatch(text);
       if (bv != null) {
-        return bv.group(0)!;
+        return bv.group(0)!.toUpperCase();
       }
       // 纯数字按抖音作品 ID 处理（aweme_id 通常 19 位）。
       final RegExpMatch? aweme = RegExp(r'^\d{15,}$').firstMatch(text);
@@ -165,11 +216,12 @@ class DownloaderApi {
     final RegExpMatch? bv = _bvPattern.firstMatch(resolved);
     if (bv != null) {
       final Uri? uri = Uri.tryParse(resolved);
+      final String bvId = bv.group(0)!.toUpperCase();
       final String? page = uri?.queryParameters['p'];
       if (page == null || page.isEmpty) {
-        return bv.group(0)!;
+        return bvId;
       }
-      return 'https://www.bilibili.com/video/${bv.group(0)}?p=$page';
+      return 'https://www.bilibili.com/video/$bvId?p=$page';
     }
     return resolved;
   }

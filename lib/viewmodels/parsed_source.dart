@@ -151,7 +151,8 @@ class MediaPart {
     }
     final match = videos.where((s) => s.quality == quality).toList();
     if (match.isEmpty) {
-      return pickVideo();
+      // 刷新地址后码率档位可能变化：宁可报错，也不静默下载另一档。
+      return null;
     }
     final avc = match.where((s) => s.codec == 'avc').toList();
     final pool = avc.isNotEmpty ? avc : match;

@@ -13,21 +13,19 @@ import '../stores/settings_store.dart';
 import '../theme/app_theme.dart';
 
 /// 应用根 Widget：注入 Provider + M3E 主题 + 命名路由。
-Widget getRootWidget() {
+Widget getRootWidget({SettingsStore? settingsStore}) {
   // 直接持有实例，避免 DownloaderStore 的闭包通过 context 跨 Provider 查找
   // SettingsStore（后者不是它的祖先，会抛 ProviderNotFoundException）。
-  final SettingsStore settingsStore = SettingsStore()..load();
+  final SettingsStore store = settingsStore ?? (SettingsStore()..load());
   return MultiProvider(
     providers: [
       ChangeNotifierProvider<AuthStore>(create: (_) => AuthStore()..load()),
-      ChangeNotifierProvider<SettingsStore>.value(value: settingsStore),
+      ChangeNotifierProvider<SettingsStore>.value(value: store),
       ChangeNotifierProvider<DownloaderStore>(
         create: (BuildContext ctx) => DownloaderStore(
           DownloaderApi(
-            dtkConfig: () => DtkConfig(
-              baseUrl: settingsStore.dtkBaseUrl,
-              apiKey: settingsStore.dtkApiKey,
-            ),
+            dtkConfig: () =>
+                DtkConfig(baseUrl: store.dtkBaseUrl, apiKey: store.dtkApiKey),
           ),
           cookieProvider: () => ctx.read<AuthStore>().cookie,
         ),

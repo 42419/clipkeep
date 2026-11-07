@@ -98,9 +98,12 @@ class BilibiliResolver {
     13,
   ];
 
-  static final RegExp _bvPattern = RegExp(r'BV[0-9A-Za-z]{10}');
+  static final RegExp _bvPattern = RegExp(
+    r'BV[0-9A-Za-z]{10}',
+    caseSensitive: false,
+  );
   static final RegExp _avPattern = RegExp(
-    r'(?:^|[^0-9])av(\d+)',
+    r'(?:^|[^0-9A-Za-z_])av(\d+)',
     caseSensitive: false,
   );
   static final RegExp _chrFilter = RegExp(r"[!'()*]");
@@ -413,7 +416,7 @@ class BilibiliResolver {
   ({String? bvid, int? aid}) _extractIds(String input) {
     final RegExpMatch? bv = _bvPattern.firstMatch(input);
     if (bv != null) {
-      return (bvid: bv.group(0), aid: null);
+      return (bvid: bv.group(0)!.toUpperCase(), aid: null);
     }
     final RegExpMatch? av = _avPattern.firstMatch(input.trim());
     if (av != null) {

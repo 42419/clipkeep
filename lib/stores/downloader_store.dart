@@ -286,10 +286,8 @@ class DownloaderStore extends ChangeNotifier {
     if (!_tasks.contains(task)) {
       return;
     }
-    if (task.status == DownloadStatus.paused) {
-      notifyListeners();
-      return;
-    }
+    // 成品已经落盘时，即使暂停信号在保存阶段才到，也必须按完成处理；
+    // 否则用户会看到“已暂停”，继续后又生成第二份文件。
     if (result is Ok<String>) {
       task.status = DownloadStatus.completed;
       task.progress = 1;
@@ -299,7 +297,15 @@ class DownloaderStore extends ChangeNotifier {
       if (_tasks.contains(task)) {
         task.thumbnailPath = thumb;
       }
-    } else if (result is Err<String>) {
+      unawaited(_persistCompleted());
+      notifyListeners();
+      return;
+    }
+    if (task.status == DownloadStatus.paused) {
+      notifyListeners();
+      return;
+    }
+    if (result is Err<String>) {
       task.phase = null;
       task.status = DownloadStatus.failed;
       task.error = result.error.message;
@@ -370,6 +376,8 @@ class DownloaderStore extends ChangeNotifier {
         return;
       }
     }
+    // 刷新后码率/分片可能变化，旧临时文件不能续接；从零开始避免拼出坏文件。
+    await _api.cleanup(task.id);
     // 重试可能因签名/分片失效而从零开始，先清掉旧进度，避免停在虚假的百分比。
     task.progress = 0;
     await resumeTask(task);

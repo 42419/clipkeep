@@ -43,6 +43,8 @@ class DtkClient {
           receiveTimeout: const Duration(seconds: 60),
           sendTimeout: const Duration(seconds: 15),
           responseType: ResponseType.json,
+          // 不自动跟随重定向：X-API-Key 不能带到未知第三方地址。
+          followRedirects: false,
           headers: const <String, String>{
             'accept': 'application/json',
             'content-type': 'application/json',
@@ -140,6 +142,17 @@ class DtkClient {
       }
       if (status >= 500) {
         return Err(AppError(_envelopeError(envelope)));
+      }
+      if (envelope['success'] != true) {
+        final String code = (_envelopeCode(envelope) ?? '').toLowerCase();
+        if (code.contains('auth') ||
+            code.contains('key') ||
+            code.contains('unauthorized') ||
+            code.contains('forbidden')) {
+          return Err(
+            AppError('API Key 无效或权限不足（${code.isEmpty ? status : code}）'),
+          );
+        }
       }
       // 能拿到标准信封即说明地址与 Key 可用（业务错误如 INVALID_URL 不算失败）。
       return const Ok('连接正常');

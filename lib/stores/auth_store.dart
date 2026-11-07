@@ -58,6 +58,7 @@ class AuthStore extends ChangeNotifier {
   bool _vip = false;
   bool _ready = false;
   DateTime? _cookieExpiresAt;
+  int _authSeq = 0;
 
   bool get ready => _ready;
   String? get cookie => _cookie;
@@ -74,7 +75,9 @@ class AuthStore extends ChangeNotifier {
   }
 
   bool get isLoggedIn =>
-      _cookie != null && _cookie!.contains('SESSDATA=') && !isExpired;
+      _cookie != null &&
+      RegExp(r'(?:^|;\s*)SESSDATA=[^;]+').hasMatch(_cookie!) &&
+      !isExpired;
 
   Future<void> load() async {
     try {
@@ -97,9 +100,10 @@ class AuthStore extends ChangeNotifier {
 
   /// 用 WebView 拿到的 Cookie 登录；会先用 nav 接口校验。
   Future<bool> loginWithCookie(String rawCookie) async {
+    final int seq = ++_authSeq;
     final String cookie = sanitizeCookie(rawCookie);
     final BiliProfile? profile = await _fetchProfile(cookie);
-    if (profile == null) {
+    if (profile == null || seq != _authSeq) {
       return false;
     }
     _cookie = cookie;
@@ -115,11 +119,16 @@ class AuthStore extends ChangeNotifier {
 
   /// 静默刷新资料；失效时（非静默）退出登录。
   Future<bool> refreshProfile({bool silent = false}) async {
+    final int seq = _authSeq;
     final String? cookie = _cookie;
     if (cookie == null) {
       return false;
     }
     final BiliProfile? profile = await _fetchProfile(cookie);
+    // 刷新期间用户已退出/切换账号：丢弃旧请求结果，避免新 Cookie 配旧资料。
+    if (seq != _authSeq || _cookie != cookie) {
+      return false;
+    }
     if (profile == null) {
       if (!silent) {
         await logout();
@@ -136,6 +145,7 @@ class AuthStore extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    ++_authSeq;
     _cookie = null;
     _cookieExpiresAt = null;
     _uname = null;

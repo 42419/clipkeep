@@ -168,7 +168,10 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
     }
     _prefsLoaded = true;
     // 保证从设置页关闭自动检测后，冷启动也不会用默认 true 弹一次。
-    await context.read<SettingsStore>().load();
+    final SettingsStore settings = context.read<SettingsStore>();
+    if (!settings.isLoaded) {
+      await settings.load();
+    }
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       _lastClipboard = prefs.getString('clipboard_last');

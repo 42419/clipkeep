@@ -38,10 +38,27 @@ class _HomeViewState extends State<HomeView> {
   }
 
   Future<void> _paste() async {
-    final ClipboardData? data = await Clipboard.getData(Clipboard.kTextPlain);
-    final String? text = data?.text;
-    if (text != null && text.isNotEmpty && mounted) {
-      setState(() => _input.text = text);
+    try {
+      final ClipboardData? data = await Clipboard.getData(Clipboard.kTextPlain);
+      final String? text = data?.text?.trim();
+      if (!mounted) {
+        return;
+      }
+      if (text == null || text.isEmpty) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('剪贴板没有可粘贴的文本')));
+        return;
+      }
+      setState(() {
+        _input.text = text;
+        _input.selection = TextSelection.collapsed(offset: text.length);
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('读取剪贴板失败')));
     }
   }
 
@@ -61,12 +78,15 @@ class _HomeViewState extends State<HomeView> {
     // 首页平台切换只在指定平台时做预校验，真正路由仍按链接自动识别。
     final String lower = text.toLowerCase();
     final bool looksDouyin =
-        lower.contains('douyin') || lower.contains('iesdouyin');
+        lower.contains('douyin') ||
+        lower.contains('iesdouyin') ||
+        RegExp(r'^\d{15,}$').hasMatch(text);
     final bool looksBili =
         lower.contains('bilibili') ||
         lower.contains('b23.tv') ||
         lower.contains('bili2233') ||
-        RegExp(r'BV[0-9A-Za-z]{10}').hasMatch(text);
+        RegExp(r'BV[0-9A-Za-z]{10}', caseSensitive: false).hasMatch(text) ||
+        RegExp(r'(?:^|[^0-9])av\d+', caseSensitive: false).hasMatch(text);
     if (_mode == 1 && !looksDouyin) {
       messenger.clearSnackBars();
       messenger.showSnackBar(const SnackBar(content: Text('当前选择抖音，请粘贴抖音分享链接')));
@@ -235,14 +255,18 @@ class _HomeViewState extends State<HomeView> {
             shape: M3EButtonShape.square,
             size: M3EButtonSize.sm,
             selectedIndex: _mode,
+            selectionRequired: true,
             style: M3EButtonStyle.filled,
             density: M3EButtonGroupDensity.regular,
             neighborSquish: true,
             expandedRatio: 0.1,
             spacing: 5,
-            onSelectedIndexChanged: (index) => setState(() {
-              _mode = index!;
-            }),
+            onSelectedIndexChanged: (index) {
+              if (index == null) {
+                return;
+              }
+              setState(() => _mode = index);
+            },
             actions: const <M3EButtonGroupAction>[
               M3EButtonGroupAction(
                 icon: Icon(M3EIcons.check),

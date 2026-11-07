@@ -4,8 +4,9 @@ import 'package:material_ui/material_ui.dart'
     hide CornerRounding, RoundedPolygon;
 
 import 'routes/app_router.dart';
+import 'stores/settings_store.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // 双保险：即使 M3EMaterialApp 的 drawUnderSystemBars 被主题重建覆盖，
   // 也确保窗口是 edge-to-edge、系统栏透明。
@@ -39,5 +40,8 @@ void main() {
       '完整源码：https://github.com/42419/clipkeep',
     );
   });
-  runApp(getRootWidget());
+  // 先读完设置再建主题，避免关闭动态取色的用户首帧闪一下动态色。
+  final SettingsStore settings = SettingsStore();
+  await settings.load();
+  runApp(getRootWidget(settingsStore: settings));
 }

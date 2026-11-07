@@ -143,7 +143,7 @@ class SettingsView extends StatelessWidget {
                 return M3EListItem(
                   leading: const Icon(Icons.description_rounded),
                   headline: '开源许可',
-                  supportingText: '第三方组件与来源声明',
+                  supportingText: 'GPL-3.0 · 第三方组件与来源声明',
                   trailing: Icon(
                     Icons.chevron_right,
                     color: scheme.onSurfaceVariant,
