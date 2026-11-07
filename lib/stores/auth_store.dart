@@ -57,6 +57,8 @@ class AuthStore extends ChangeNotifier {
   int? _mid;
   bool _vip = false;
   bool _ready = false;
+  bool _sessionInvalid = false;
+  bool _lastFetchUnauthorized = false;
   DateTime? _cookieExpiresAt;
   int _authSeq = 0;
 
@@ -76,6 +78,7 @@ class AuthStore extends ChangeNotifier {
 
   bool get isLoggedIn =>
       _cookie != null &&
+      !_sessionInvalid &&
       RegExp(r'(?:^|;\s*)SESSDATA=[^;]+').hasMatch(_cookie!) &&
       !isExpired;
 
@@ -108,6 +111,7 @@ class AuthStore extends ChangeNotifier {
     }
     _cookie = cookie;
     _cookieExpiresAt = parseSessdataExpiry(cookie);
+    _sessionInvalid = false;
     _uname = profile.uname;
     _face = profile.face;
     _mid = profile.mid;
@@ -125,16 +129,22 @@ class AuthStore extends ChangeNotifier {
       return false;
     }
     final BiliProfile? profile = await _fetchProfile(cookie);
+    final bool unauthorized = _lastFetchUnauthorized;
     // 刷新期间用户已退出/切换账号：丢弃旧请求结果，避免新 Cookie 配旧资料。
     if (seq != _authSeq || _cookie != cookie) {
       return false;
     }
     if (profile == null) {
+      if (unauthorized) {
+        _sessionInvalid = true;
+        notifyListeners();
+      }
       if (!silent) {
         await logout();
       }
       return false;
     }
+    _sessionInvalid = false;
     _uname = profile.uname;
     _face = profile.face;
     _mid = profile.mid;
@@ -152,6 +162,7 @@ class AuthStore extends ChangeNotifier {
     _face = null;
     _mid = null;
     _vip = false;
+    _sessionInvalid = false;
     try {
       await _storage.delete(key: _kCookie);
       await _storage.delete(key: _kUname);
@@ -180,6 +191,7 @@ class AuthStore extends ChangeNotifier {
   }
 
   Future<BiliProfile?> _fetchProfile(String cookie) async {
+    _lastFetchUnauthorized = false;
     try {
       final Response<dynamic> res = await _dio.get<dynamic>(
         'https://api.bilibili.com/x/web-interface/nav',
@@ -194,16 +206,31 @@ class AuthStore extends ChangeNotifier {
         ),
       );
       final dynamic body = res.data;
-      if (body is Map && body['code'] == 0) {
-        final dynamic data = body['data'];
-        if (data is Map && data['isLogin'] == true) {
-          return BiliProfile(
-            uname: (data['uname'] ?? '').toString(),
-            face: (data['face'] ?? '').toString(),
-            mid: (data['mid'] as num?)?.toInt() ?? 0,
-            vip: (data['vipStatus'] as num?) == 1,
-          );
+      if (body is Map) {
+        final int code = (body['code'] as num?)?.toInt() ?? 0;
+        if (code == -101 || code == -111) {
+          _lastFetchUnauthorized = true;
+          return null;
         }
+        if (code == 0) {
+          final dynamic data = body['data'];
+          if (data is Map && data['isLogin'] == true) {
+            return BiliProfile(
+              uname: (data['uname'] ?? '').toString(),
+              face: (data['face'] ?? '').toString(),
+              mid: (data['mid'] as num?)?.toInt() ?? 0,
+              vip: (data['vipStatus'] as num?) == 1,
+            );
+          }
+          _lastFetchUnauthorized = true;
+          return null;
+        }
+      }
+      return null;
+    } on DioException catch (e) {
+      final int? status = e.response?.statusCode;
+      if (status == 401 || status == 403) {
+        _lastFetchUnauthorized = true;
       }
       return null;
     } catch (_) {

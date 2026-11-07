@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../components/common/clipboard_link_sheet.dart';
+import '../stores/auth_store.dart';
 import '../stores/downloader_store.dart';
 import '../stores/main_tab_controller.dart';
 import '../stores/settings_store.dart';
@@ -85,6 +86,11 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      // 回到前台时静默校验登录态；Cookie 被撤销时由 AuthStore 标记失效。
+      final AuthStore auth = context.read<AuthStore>();
+      if (auth.isLoggedIn) {
+        unawaited(auth.refreshProfile(silent: true));
+      }
       unawaited(_checkClipboardAfterResume());
     }
   }
