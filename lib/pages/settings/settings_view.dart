@@ -473,11 +473,21 @@ class SettingsView extends StatelessWidget {
   }
 
   /// 直接进 Flutter 许可证页：包含 GPL 全文、第三方来源与所有 pub 依赖许可。
-  void _openLicenses(BuildContext context) {
+  Future<void> _openLicenses(BuildContext context) async {
+    String version = '1.0.0';
+    try {
+      final PackageInfo info = await PackageInfo.fromPlatform();
+      version = '${info.version} (${info.buildNumber})';
+    } catch (_) {
+      // 读取失败保留默认版本。
+    }
+    if (!context.mounted) {
+      return;
+    }
     showLicensePage(
       context: context,
       applicationName: 'ClipKeep',
-      applicationVersion: '1.0.0',
+      applicationVersion: version,
       applicationLegalese:
           'GPL-3.0-or-later\nhttps://github.com/42419/clipkeep',
     );
@@ -525,6 +535,9 @@ class _DtkServiceCardState extends State<_DtkServiceCard> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
+    final SettingsStore settings = context.watch<SettingsStore>();
+    final bool configured = settings.dtkConfigured;
+    final bool insecure = settings.dtkBaseUrl.trim().startsWith('http://');
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -535,11 +548,20 @@ class _DtkServiceCardState extends State<_DtkServiceCard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Text(
-            '抖音解析走自建服务，地址与密钥已内置，无需填写。可点下方检测连通性。',
+            configured
+                ? '抖音解析走自建服务，地址与密钥已内置，无需填写。可点下方检测连通性。'
+                : '当前构建未内置抖音解析服务（缺少 DTK_BASE_URL / DTK_API_KEY）。',
             style: theme.textTheme.bodySmall?.copyWith(
-              color: scheme.onSurfaceVariant,
+              color: configured ? scheme.onSurfaceVariant : scheme.error,
             ),
           ),
+          if (insecure) ...<Widget>[
+            const SizedBox(height: 8),
+            Text(
+              '警告：当前 DTK 使用明文 HTTP，X-API-Key 可能被窃听，建议改用 HTTPS。',
+              style: theme.textTheme.bodySmall?.copyWith(color: scheme.error),
+            ),
+          ],
           const SizedBox(height: 12),
           Row(
             children: <Widget>[

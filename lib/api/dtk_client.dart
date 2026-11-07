@@ -234,6 +234,13 @@ class DtkClient {
   }
 
   Map<String, dynamic> _asData(Response<dynamic> resp) {
+    final int? status = resp.statusCode;
+    if (status != null && status >= 300 && status < 400) {
+      throw DtkException(
+        '解析服务发生重定向（HTTP $status），请使用最终地址并改用 HTTPS',
+        code: 'REDIRECT',
+      );
+    }
     final dynamic body = resp.data;
     if (body is! Map) {
       throw DtkException('解析服务返回格式异常', code: 'BAD_RESPONSE');

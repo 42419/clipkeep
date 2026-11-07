@@ -416,7 +416,10 @@ class BilibiliResolver {
   ({String? bvid, int? aid}) _extractIds(String input) {
     final RegExpMatch? bv = _bvPattern.firstMatch(input);
     if (bv != null) {
-      return (bvid: bv.group(0)!.toUpperCase(), aid: null);
+      return (
+        bvid: bv.group(0)!.replaceFirst(RegExp(r'^[Bb][Vv]'), 'BV'),
+        aid: null,
+      );
     }
     final RegExpMatch? av = _avPattern.firstMatch(input.trim());
     if (av != null) {

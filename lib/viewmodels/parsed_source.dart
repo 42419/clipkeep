@@ -151,6 +151,26 @@ class MediaPart {
     }
     final match = videos.where((s) => s.quality == quality).toList();
     if (match.isEmpty) {
+      // 抖音 quality 含同分辨率名次，刷新后 rank 可能变化；只允许按同短边回退。
+      if (quality >= 1000) {
+        final int shortSide = quality ~/ 1000;
+        final List<MediaStream> sameSize = videos.where((MediaStream s) {
+          final int w = s.width ?? 0;
+          final int h = s.height ?? 0;
+          final int short = w > 0 && h > 0 ? (w < h ? w : h) : (h > 0 ? h : w);
+          return short == shortSide;
+        }).toList();
+        if (sameSize.isNotEmpty) {
+          sameSize.sort((MediaStream a, MediaStream b) {
+            final int byQuality = b.quality.compareTo(a.quality);
+            if (byQuality != 0) {
+              return byQuality;
+            }
+            return (b.bandwidth ?? 0).compareTo(a.bandwidth ?? 0);
+          });
+          return sameSize.first;
+        }
+      }
       // 刷新地址后码率档位可能变化：宁可报错，也不静默下载另一档。
       return null;
     }
@@ -165,8 +185,32 @@ class MediaPart {
     if (audios.isEmpty) {
       return null;
     }
+    // B 站普通音轨优先 192K/132K/64K；Hi-Res/杜比轨封进 mp4 可能无声。
+    for (final int id in <int>[30280, 30232, 30216]) {
+      for (final MediaStream audio in audios) {
+        if (audio.quality == id) {
+          return audio;
+        }
+      }
+    }
     audios.sort((a, b) => b.quality.compareTo(a.quality));
     return audios.first;
+  }
+
+  /// 仅音频抽取时用最低画质视频，避免为了音轨下载整段最高码率。
+  MediaStream? pickSmallestVideo() {
+    final videos = streams.where((s) => s.kind == 'video').toList();
+    if (videos.isEmpty) {
+      return null;
+    }
+    videos.sort((a, b) {
+      final int byQuality = a.quality.compareTo(b.quality);
+      if (byQuality != 0) {
+        return byQuality;
+      }
+      return (a.bandwidth ?? 0).compareTo(b.bandwidth ?? 0);
+    });
+    return videos.first;
   }
 }
 

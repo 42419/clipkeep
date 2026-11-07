@@ -191,7 +191,7 @@ class DownloaderApi {
     if (match == null) {
       final RegExpMatch? bv = _bvPattern.firstMatch(text);
       if (bv != null) {
-        return bv.group(0)!.toUpperCase();
+        return bv.group(0)!.replaceFirst(RegExp(r'^[Bb][Vv]'), 'BV');
       }
       // 纯数字按抖音作品 ID 处理（aweme_id 通常 19 位）。
       final RegExpMatch? aweme = RegExp(r'^\d{15,}$').firstMatch(text);
@@ -216,7 +216,7 @@ class DownloaderApi {
     final RegExpMatch? bv = _bvPattern.firstMatch(resolved);
     if (bv != null) {
       final Uri? uri = Uri.tryParse(resolved);
-      final String bvId = bv.group(0)!.toUpperCase();
+      final String bvId = bv.group(0)!.replaceFirst(RegExp(r'^[Bb][Vv]'), 'BV');
       final String? page = uri?.queryParameters['p'];
       if (page == null || page.isEmpty) {
         return bvId;
@@ -296,10 +296,15 @@ class DownloaderApi {
     MediaPart part, {
     String? cookie,
   }) async {
-    if (part.id.startsWith('http')) {
+    // B 站分 P id 形如 BV...-cid / aid-cid；其余（web_url、content_id）按抖音处理。
+    final bool biliPart = RegExp(
+      r'^(BV[0-9A-Za-z]{10}|[0-9]+)-[0-9]+$',
+      caseSensitive: false,
+    ).hasMatch(part.id);
+    if (!biliPart) {
       final DtkConfig? config = dtkConfig?.call();
       if (config == null || !config.isConfigured) {
-        return const Err(AppError('未配置抖音解析服务'));
+        return const Err(AppError('当前构建未内置抖音解析服务'));
       }
       return DtkClient(config).refreshStreams(part.id);
     }

@@ -22,6 +22,7 @@ class DownloaderStore extends ChangeNotifier {
   final List<DownloadTask> _tasks = <DownloadTask>[];
   final Map<String, CancelToken> _tokens = <String, CancelToken>{};
   final Map<String, Future<void>> _running = <String, Future<void>>{};
+  final Set<String> _retrying = <String>{};
   final Completer<void> _historyReady = Completer<void>();
 
   bool _parsing = false;
@@ -31,6 +32,7 @@ class DownloaderStore extends ChangeNotifier {
   int _parseSeq = 0;
   int _partIndex = 0;
   bool _partLoading = false;
+  int _partLoadSeq = 0;
 
   bool get parsing => _parsing;
   String? get error => _error;
@@ -78,6 +80,7 @@ class DownloaderStore extends ChangeNotifier {
       _error = result.error.message;
     }
     _parsing = false;
+    _partLoadSeq += 1;
     _partLoading = false;
     notifyListeners();
   }
@@ -97,6 +100,7 @@ class DownloaderStore extends ChangeNotifier {
       notifyListeners();
       return Ok<MediaPart>(part);
     }
+    final int seq = ++_partLoadSeq;
     _partLoading = true;
     notifyListeners();
     try {
@@ -104,6 +108,10 @@ class DownloaderStore extends ChangeNotifier {
         part,
         cookie: cookieProvider?.call(),
       );
+      // 请求期间又发起了新解析：丢弃旧结果，不能改写新来源。
+      if (!identical(_source, source) || seq != _partLoadSeq) {
+        return const Err(AppError('解析内容已更新，请重新选择分 P'));
+      }
       if (refreshed is Ok<List<MediaStream>> && refreshed.value.isNotEmpty) {
         final MediaPart loaded = MediaPart(
           id: part.id,
@@ -117,8 +125,10 @@ class DownloaderStore extends ChangeNotifier {
       }
       return const Err(AppError('该分 P 暂时无法获取画质，请稍后重试'));
     } finally {
-      _partLoading = false;
-      notifyListeners();
+      if (seq == _partLoadSeq) {
+        _partLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -190,7 +200,9 @@ class DownloaderStore extends ChangeNotifier {
     void Function(DownloadProgress progress)? onProgress,
   }) async {
     final String downloadId = 'img_${DateTime.now().microsecondsSinceEpoch}';
-    final int? index = onlyIndex?.clamp(0, source.images.length - 1);
+    final int? index = onlyIndex == null || source.images.isEmpty
+        ? null
+        : onlyIndex.clamp(0, source.images.length - 1);
     final Result<String> result = await _api.saveImages(
       source.images,
       onlyIndex: index,
@@ -351,36 +363,41 @@ class DownloaderStore extends ChangeNotifier {
 
   /// 重试失败任务：先用最新地址刷新流（解决签名 URL 过期 403），再继续下载。
   Future<void> retryTask(DownloadTask task) async {
-    if (_running.containsKey(task.id)) {
+    if (_running.containsKey(task.id) || _retrying.contains(task.id)) {
       return;
     }
-    final MediaPart? part = task.part;
-    if (part != null) {
-      final Result<List<MediaStream>> refreshed = await _api.refreshStreams(
-        part,
-        cookie: cookieProvider?.call(),
-      );
-      if (refreshed is Ok<List<MediaStream>> && refreshed.value.isNotEmpty) {
-        task.part = MediaPart(
-          id: part.id,
-          title: part.title,
-          durationSeconds: part.durationSeconds,
-          streams: refreshed.value,
+    _retrying.add(task.id);
+    try {
+      final MediaPart? part = task.part;
+      if (part != null) {
+        final Result<List<MediaStream>> refreshed = await _api.refreshStreams(
+          part,
+          cookie: cookieProvider?.call(),
         );
-      } else {
-        task
-          ..status = DownloadStatus.failed
-          ..error = '刷新下载地址失败，请稍后重试';
-        unawaited(_persistCompleted());
-        notifyListeners();
-        return;
+        if (refreshed is Ok<List<MediaStream>> && refreshed.value.isNotEmpty) {
+          task.part = MediaPart(
+            id: part.id,
+            title: part.title,
+            durationSeconds: part.durationSeconds,
+            streams: refreshed.value,
+          );
+        } else {
+          task
+            ..status = DownloadStatus.failed
+            ..error = '刷新下载地址失败，请稍后重试';
+          unawaited(_persistCompleted());
+          notifyListeners();
+          return;
+        }
       }
+      // 刷新后码率/分片可能变化，旧临时文件不能续接；从零开始避免拼出坏文件。
+      await _api.cleanup(task.id);
+      // 重试可能因签名/分片失效而从零开始，先清掉旧进度，避免停在虚假的百分比。
+      task.progress = 0;
+      await resumeTask(task);
+    } finally {
+      _retrying.remove(task.id);
     }
-    // 刷新后码率/分片可能变化，旧临时文件不能续接；从零开始避免拼出坏文件。
-    await _api.cleanup(task.id);
-    // 重试可能因签名/分片失效而从零开始，先清掉旧进度，避免停在虚假的百分比。
-    task.progress = 0;
-    await resumeTask(task);
   }
 
   void removeTask(DownloadTask task) {

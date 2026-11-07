@@ -61,6 +61,9 @@ class MediaDownloader {
     } catch (_) {
       // 读取失败默认保存到相册。
     }
+    if (saveToGallery && !await _ensureGalleryAccess()) {
+      return const Err(AppError('没有相册写入权限'));
+    }
     try {
       final dir =
           await getExternalStorageDirectory() ??
@@ -134,18 +137,31 @@ class MediaDownloader {
     // 下载阶段占 0~90%，合并阶段占 90~100%。
     agg.scale = 0.9;
 
-    await Future.wait(<Future<void>>[
-      _downloadStream(video, videoPath, agg, 'video', cancelToken, onProgress),
-      if (hasAudio)
+    try {
+      await Future.wait(<Future<void>>[
         _downloadStream(
-          audio,
-          audioPath,
+          video,
+          videoPath,
           agg,
-          'audio',
+          'video',
           cancelToken,
           onProgress,
         ),
-    ]);
+        if (hasAudio)
+          _downloadStream(
+            audio,
+            audioPath,
+            agg,
+            'audio',
+            cancelToken,
+            onProgress,
+          ),
+      ], eagerError: true);
+    } catch (e) {
+      // 一路失败时取消另一路，避免 UI 继续“下载中”并白耗流量。
+      cancelToken?.cancel('peer_stream_failed');
+      rethrow;
+    }
     agg.finishStreamKey('video');
     if (hasAudio) {
       agg.finishStreamKey('audio');
@@ -207,9 +223,15 @@ class MediaDownloader {
         token.whenCancel.then((_) => FFmpegKit.cancel(session.getSessionId())),
       );
     }
+    final int mergeInputBytes =
+        await File(videoPath).length() +
+        (hasAudio ? await File(audioPath).length() : 0);
+    final int timeoutMinutes = 5 + (mergeInputBytes ~/ (200 * 1024 * 1024)) * 5;
     final ReturnCode? returnCode;
     try {
-      returnCode = await merge.future.timeout(const Duration(minutes: 5));
+      returnCode = await merge.future.timeout(
+        Duration(minutes: timeoutMinutes),
+      );
     } on TimeoutException {
       await FFmpegKit.cancel(session.getSessionId());
       await _cleanupQuietly(<String>[outputPath]);
@@ -398,6 +420,17 @@ class MediaDownloader {
           ),
         );
       } catch (e) {
+        final int savedCount = savedImages + savedMotions;
+        if (savedCount > 0) {
+          // 部分图片已经落盘：不能返回纯错误让用户重试（会产生重复），
+          // 用带失败信息的成功结果记录已完成项。
+          final String where = saveToGallery
+              ? '相册（${AppConstants.albumName}）'
+              : 'Download/ClipKeep';
+          return Ok(
+            '已保存 $savedCount 项到$where；第 ${displayIndex + 1} 张失败：${_describe(e)}',
+          );
+        }
         return Err(
           AppError('保存第 ${displayIndex + 1} 张图片失败：${_describe(e)}', cause: e),
         );
@@ -516,14 +549,28 @@ class MediaDownloader {
         if (b[0] == 0x47 && b[1] == 0x49 && b[2] == 0x46) {
           return true; // GIF
         }
-        return b[0] == 0x52 &&
+        if (b[0] == 0x52 &&
             b[1] == 0x49 &&
             b[2] == 0x46 &&
             b[3] == 0x46 &&
             b[8] == 0x57 &&
             b[9] == 0x45 &&
             b[10] == 0x42 &&
-            b[11] == 0x50; // WebP
+            b[11] == 0x50) {
+          return true; // WebP
+        }
+        // HEIC/HEIF/AVIF: ....ftyp + brand
+        if (b[4] == 0x66 && b[5] == 0x74 && b[6] == 0x79 && b[7] == 0x70) {
+          final String brand = String.fromCharCodes(b.sublist(8, 12));
+          return <String>[
+            'heic',
+            'heix',
+            'hevc',
+            'avif',
+            'avis',
+          ].contains(brand);
+        }
+        return false;
       } finally {
         await raf.close();
       }
@@ -562,6 +609,7 @@ class MediaDownloader {
       'png',
       'gif',
       'heic',
+      'avif',
     ]) {
       if (path.endsWith('.$ext')) {
         return ext == 'jpeg' ? 'jpg' : ext;
@@ -580,6 +628,8 @@ class MediaDownloader {
         return 'image/gif';
       case 'heic':
         return 'image/heic';
+      case 'avif':
+        return 'image/avif';
       default:
         return 'image/jpeg';
     }
@@ -663,7 +713,7 @@ class MediaDownloader {
     CancelToken? cancelToken,
     void Function(DownloadProgress progress)? onProgress,
   ) async {
-    final MediaStream? video = part.pickVideoQuality(null);
+    final MediaStream? video = part.pickSmallestVideo();
     if (video == null || video.primaryUrl.isEmpty) {
       return const Err(AppError('没有可下载的音频流'));
     }
@@ -751,8 +801,9 @@ class MediaDownloader {
     if (saveToGallery && !await _ensureGalleryAccess()) {
       return const Err(AppError('没有相册写入权限'));
     }
+    final String ext = _imageExt(url);
     try {
-      final coverPath = '$dirPath/clipkeep_cover_$stamp.jpg';
+      final coverPath = '$dirPath/clipkeep_cover_$stamp.$ext';
       await _dio.download(
         url,
         coverPath,
@@ -771,6 +822,10 @@ class MediaDownloader {
         await _cleanupQuietly(<String>[coverPath]);
         return const Err(AppError('已暂停'));
       }
+      if (!await _isImageFile(coverPath)) {
+        await _cleanupQuietly(<String>[coverPath]);
+        return const Err(AppError('封面地址返回的不是有效图片'));
+      }
       final String message;
       if (saveToGallery) {
         await Gal.putImage(coverPath, album: AppConstants.albumName);
@@ -778,8 +833,8 @@ class MediaDownloader {
       } else {
         final String? saved = await _saveToDownloads(
           coverPath,
-          'ClipKeep_cover_$stamp.jpg',
-          'image/jpeg',
+          'ClipKeep_cover_$stamp.$ext',
+          _imageMime(ext),
         );
         if (saved == null) {
           await _cleanupQuietly(<String>[coverPath]);
@@ -814,8 +869,9 @@ class MediaDownloader {
     if (url == null) {
       return false;
     }
+    final String ext = _imageExt(url);
     try {
-      final coverPath = '$dirPath/clipkeep_cover_$stamp.jpg';
+      final coverPath = '$dirPath/clipkeep_cover_$stamp.$ext';
       await _dio.download(
         url,
         coverPath,
@@ -824,6 +880,10 @@ class MediaDownloader {
           receiveTimeout: const Duration(minutes: 5),
         ),
       );
+      if (!await _isImageFile(coverPath)) {
+        await _cleanupQuietly(<String>[coverPath]);
+        return false;
+      }
       if (saveToGallery) {
         if (!await _ensureGalleryAccess()) {
           await _cleanupQuietly(<String>[coverPath]);
@@ -835,8 +895,8 @@ class MediaDownloader {
       }
       final String? saved = await _saveToDownloads(
         coverPath,
-        'ClipKeep_cover_$stamp.jpg',
-        'image/jpeg',
+        'ClipKeep_cover_$stamp.$ext',
+        _imageMime(ext),
       );
       await _cleanupQuietly(<String>[coverPath]);
       return saved != null;
@@ -916,7 +976,16 @@ class MediaDownloader {
         '${dir.path}/clipkeep_a_$downloadId.m4s',
         '${dir.path}/clipkeep_av_$downloadId.m4s',
         '${dir.path}/clipkeep_audio_$downloadId.m4a',
-        '${dir.path}/clipkeep_cover_$downloadId.jpg',
+        for (final String ext in <String>[
+          'jpg',
+          'jpeg',
+          'png',
+          'gif',
+          'webp',
+          'heic',
+          'avif',
+        ])
+          '${dir.path}/clipkeep_cover_$downloadId.$ext',
         '${dir.path}/clipkeep_$downloadId.mp4',
       ];
       for (final String name in <String>[
@@ -982,10 +1051,10 @@ class MediaDownloader {
       throw Exception('没有可用的下载地址');
     }
     Object? lastError;
-    for (final String url in candidates) {
+    for (int i = 0; i < candidates.length; i++) {
       try {
         await _downloadStreamFrom(
-          url,
+          candidates[i],
           stream,
           destination,
           agg,
@@ -999,11 +1068,14 @@ class MediaDownloader {
           rethrow;
         }
         lastError = e;
-        // 不同镜像不能续接同一临时文件，失败后清掉残留，下一地址从零开始。
-        await _cleanupQuietly(<String>[
-          destination,
-          for (int i = 0; i < 64; i++) '$destination.part$i',
-        ]);
+        // 还有备用地址：不能把不同镜像拼进同一临时文件，清掉后从零试下一地址。
+        // 最后一个也失败时保留已有分片，交给“继续/重试”复用。
+        if (i < candidates.length - 1) {
+          await _cleanupQuietly(<String>[
+            destination,
+            for (int j = 0; j < 64; j++) '$destination.part$j',
+          ]);
+        }
       }
     }
     throw lastError ?? Exception('全部下载地址均失败');
@@ -1057,9 +1129,8 @@ class MediaDownloader {
         if (cancelToken?.isCancelled ?? false) {
           rethrow;
         }
-        // 分片失败：清掉分片与旧目标，回退单连接（同一地址）。
+        // 分片失败：清掉不完整分片，保留目标文件；回退单连接可继续续传。
         await _cleanupQuietly(<String>[
-          destination,
           for (int i = 0; i < 64; i++) '$destination.part$i',
         ]);
       }

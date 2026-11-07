@@ -321,6 +321,35 @@ void main() {
     test('刷新后指定画质不存在时不静默换档', () {
       expect(part.pickVideoQuality(999), isNull);
     });
+
+    test('普通音轨优先于 Hi-Res', () {
+      const MediaPart audioPart = MediaPart(
+        id: 'audio',
+        title: 'audio',
+        durationSeconds: 1,
+        streams: <MediaStream>[
+          MediaStream(
+            kind: 'audio',
+            quality: 30251,
+            codec: 'flac',
+            urls: <String>['https://example.com/flac'],
+            headers: <String, String>{},
+          ),
+          MediaStream(
+            kind: 'audio',
+            quality: 30280,
+            codec: 'avc',
+            urls: <String>['https://example.com/aac'],
+            headers: <String, String>{},
+          ),
+        ],
+      );
+      expect(audioPart.pickAudio()?.quality, 30280);
+    });
+
+    test('仅音频抽轨选最低视频画质', () {
+      expect(part.pickSmallestVideo()?.quality, 720);
+    });
   });
 
   group('任务持久化', () {
