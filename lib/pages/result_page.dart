@@ -473,7 +473,7 @@ class _ResultPageState extends State<ResultPage> {
         if (anyLive) ...<Widget>[
           const SizedBox(height: 8),
           Text(
-            '实况图会同时保存图片与关联短视频',
+            '实况图会合成为动态照片（Motion Photo），合成失败时回退为图片 + 短视频',
             style: theme.textTheme.bodySmall?.copyWith(
               color: scheme.onSurfaceVariant,
             ),

@@ -6,7 +6,7 @@ Android 端视频下载工具：粘贴哔哩哔哩 / 抖音分享链接，解析
 
 - 哔哩哔哩：纯 Dart 解析（WBI 签名 + DASH），WebView 登录后解锁高清画质；支持 BV / av / b23 短链。
 - 抖音：走自部署 DTK 解析服务，支持多画质、仅音频（无独立音轨时用 FFmpeg 抽取）、精确发布时间。
-- 图文/图集：可保存全部或单张图片；实况图同时保存关联短视频；文字类型按单张图片处理。
+- 图文/图集：可保存全部或单张图片；实况图合成为 Android Motion Photo，失败时回退为图片+视频；文字类型按单张图片处理。
 - 下载：多连接 Range 分片 + 视频/音频并行，支持断点续传、备用地址回退；失败重试会刷新过期签名地址。
 - 记录：已完成历史持久化，可重新解析；删除记录只清记录与临时文件，不删已保存的成品。
 - 界面：Material 3 Expressive（`material_3_expressive`）+ 动态取色，Android-only。
@@ -51,8 +51,8 @@ lib/
 
 - 多 P 视频只解析并下载 P1；分集选择未实现。
 - 进行中任务不持久化，杀进程后需要重新发起；无前台服务，长时间后台/熄屏下载可能被系统挂起。
-- 图文/图集：支持保存图片与实况短视频；文字类型本质是单张图片，不单独提供正文下载。
-- 实况图保存为「图片 + 关联 mp4」两个文件，暂不合成 Android Motion Photo。
+- 图文/图集：支持保存图片；实况图优先合成 Android Motion Photo，合成失败回退为图片 + 独立 mp4；文字类型本质是单张图片，不单独提供正文下载。
+- Motion Photo 合成依赖 `flutter_live_motion`，极旧 ROM 或第三方相册可能不识别动态效果。
 - 抖音解析依赖自部署服务，不是内置能力。
 - 暂停只保留临时文件供续传；签名地址过期后请用「重试」刷新，而不是「继续」。
 
@@ -66,5 +66,6 @@ ClipKeep 以 **GPL-3.0-or-later** 发布，完整文本见 [LICENSE](LICENSE)，
 - [bilibili-API-collect](https://github.com/SocialSisterYi/bilibili-API-collect)：CC-BY-NC 4.0，WBI mixinKey 置换表与接口文档来源；注意其**非商业**限制。
 - [Douyin_TikTok_Download_API](https://github.com/Evil0ctal/Douyin_TikTok_Download_API)：Apache-2.0，仅通过 REST 调用，未内嵌其代码。
 - [FFmpegKit for Flutter](https://pub.dev/packages/ffmpeg_kit_flutter_new)：插件 LGPL-3.0，所用 `ffmpeg_kit_flutter_new` 为 **Full GPL** 变体（含 x264/x265 等 GPL 组件），因此整个应用按 GPL-3.0 分发。
+- [flutter_live_motion](https://pub.dev/packages/flutter_live_motion)：MIT，用于生成 Android Motion Photo。
 
 本应用与哔哩哔哩、抖音无隶属关系，仅供学习研究；请仅下载你有权保存的内容。

@@ -7,6 +7,7 @@ import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new/ffmpeg_session.dart';
 import 'package:ffmpeg_kit_flutter_new/return_code.dart';
 import 'package:ffmpeg_kit_flutter_new/statistics.dart';
+import 'package:flutter_live_motion/flutter_live_motion.dart';
 
 import 'image_headers.dart';
 
@@ -340,6 +341,7 @@ class MediaDownloader {
     final String stamp =
         downloadId ?? DateTime.now().millisecondsSinceEpoch.toString();
     int savedImages = 0;
+    int savedMotions = 0;
     int savedVideos = 0;
 
     for (int i = 0; i < queue.length; i++) {
@@ -347,45 +349,66 @@ class MediaDownloader {
       final int displayIndex = onlyIndex == null ? i : target;
       final String ext = _imageExt(image.primaryUrl);
       final String tempImage = '${dir.path}/clipkeep_img_${stamp}_$i.$ext';
-      final String displayName = 'ClipKeep_${stamp}_${displayIndex + 1}.$ext';
+      final String displayBase = 'ClipKeep_${stamp}_${displayIndex + 1}';
+      String? tempJpg;
       String? tempVideo;
+      String? tempMotion;
       try {
         await _downloadFile(
           image.urls,
           tempImage,
           (String url) => imageHeadersFor(url),
         );
-        if (saveToGallery) {
-          await Gal.putImage(tempImage, album: AppConstants.albumName);
-        } else {
-          final String? saved = await _saveToDownloads(
-            tempImage,
-            displayName,
-            _imageMime(ext),
-          );
-          if (saved == null) {
-            return Err(AppError('保存第 ${displayIndex + 1} 张图片到下载目录失败'));
-          }
-        }
-        savedImages++;
 
         final MediaStream? live = image.liveVideo;
+        bool motionSaved = false;
         if (live != null && live.primaryUrl.isNotEmpty) {
           tempVideo = '${dir.path}/clipkeep_live_${stamp}_$i.mp4';
           await _downloadFile(live.urls, tempVideo, (_) => live.headers);
-          if (saveToGallery) {
-            await Gal.putVideo(tempVideo, album: AppConstants.albumName);
-          } else {
-            final String? saved = await _saveToDownloads(
-              tempVideo,
-              'ClipKeep_${stamp}_${displayIndex + 1}_live.mp4',
-              'video/mp4',
-            );
-            if (saved == null) {
-              return Err(AppError('保存第 ${displayIndex + 1} 张的实况视频到下载目录失败'));
+          // 先尝试合成 Motion Photo；插件要求 JPG，WebP 等先转码。
+          try {
+            String jpgPath = tempImage;
+            if (ext != 'jpg') {
+              tempJpg = '${dir.path}/clipkeep_img_${stamp}_$i.jpg';
+              await _convertToJpg(tempImage, tempJpg);
+              jpgPath = tempJpg;
             }
+            final dynamic generated = await FlutterLiveMotion().generate(
+              imagePath: jpgPath,
+              videoPath: tempVideo,
+            );
+            if (generated is String && generated.isNotEmpty) {
+              tempMotion = generated;
+              await _saveImageFile(
+                generated,
+                '${displayBase}_MP.jpg',
+                'jpg',
+                saveToGallery,
+              );
+              savedMotions++;
+              motionSaved = true;
+            }
+          } catch (_) {
+            // 合成失败时回退为图片 + 独立视频，至少不丢内容。
           }
-          savedVideos++;
+        }
+
+        if (!motionSaved) {
+          await _saveImageFile(
+            tempImage,
+            '$displayBase.$ext',
+            ext,
+            saveToGallery,
+          );
+          savedImages++;
+          if (live != null && live.primaryUrl.isNotEmpty && tempVideo != null) {
+            await _saveVideoFile(
+              tempVideo,
+              '${displayBase}_live.mp4',
+              saveToGallery,
+            );
+            savedVideos++;
+          }
         }
 
         onProgress?.call(
@@ -399,15 +422,74 @@ class MediaDownloader {
           AppError('保存第 ${displayIndex + 1} 张图片失败：${_describe(e)}', cause: e),
         );
       } finally {
-        await _cleanupQuietly(<String>[tempImage, ?tempVideo]);
+        await _cleanupQuietly(<String>[
+          tempImage,
+          ?tempJpg,
+          ?tempVideo,
+          ?tempMotion,
+        ]);
       }
     }
 
     final String where = saveToGallery
         ? '相册（${AppConstants.albumName}）'
         : 'Download/ClipKeep';
-    final String videos = savedVideos > 0 ? '、$savedVideos 个实况视频' : '';
-    return Ok('已保存 $savedImages 张图片$videos到$where');
+    final List<String> saved = <String>[
+      if (savedImages > 0) '$savedImages 张图片',
+      if (savedMotions > 0) '$savedMotions 张实况照片',
+      if (savedVideos > 0) '$savedVideos 个实况视频',
+    ];
+    return Ok('已保存 ${saved.join('、')}到$where');
+  }
+
+  Future<void> _saveImageFile(
+    String path,
+    String displayName,
+    String ext,
+    bool saveToGallery,
+  ) async {
+    if (saveToGallery) {
+      await Gal.putImage(path, album: AppConstants.albumName);
+      return;
+    }
+    final String? saved = await _saveToDownloads(
+      path,
+      displayName,
+      _imageMime(ext),
+    );
+    if (saved == null) {
+      throw AppError('保存图片到下载目录失败');
+    }
+  }
+
+  Future<void> _saveVideoFile(
+    String path,
+    String displayName,
+    bool saveToGallery,
+  ) async {
+    if (saveToGallery) {
+      await Gal.putVideo(path, album: AppConstants.albumName);
+      return;
+    }
+    final String? saved = await _saveToDownloads(
+      path,
+      displayName,
+      'video/mp4',
+    );
+    if (saved == null) {
+      throw AppError('保存实况视频到下载目录失败');
+    }
+  }
+
+  /// 把 WebP/PNG 等转成 Motion Photo 所需的 JPEG，并去掉原图元数据。
+  Future<void> _convertToJpg(String input, String output) async {
+    final FFmpegSession session = await FFmpegKit.execute(
+      '-y -i "$input" -frames:v 1 -q:v 2 -map_metadata -1 "$output"',
+    );
+    final ReturnCode? code = await session.getReturnCode();
+    if (!ReturnCode.isSuccess(code)) {
+      throw Exception('图片转 JPEG 失败');
+    }
   }
 
   Future<void> _downloadFile(
