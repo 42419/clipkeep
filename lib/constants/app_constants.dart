@@ -32,11 +32,15 @@ class AppConstants {
   /// GitHub 仓库（owner/name），用于检查更新。
   static const String githubRepo = '42419/clipkeep';
 
+  /// 国内主更新源（CNB）。
+  static const String cnbRepo = 'yunfeiii/clipkeep';
+
   /// 更新清单（update.json）地址。
   ///
   /// 为空时走 GitHub Releases：取 latest release 里的 update.json 资产。
   /// 将来换国内源只需在构建期注入 `UPDATE_MANIFEST_URL` 或改这里的默认值。
   static const String updateManifestUrl = String.fromEnvironment(
     'UPDATE_MANIFEST_URL',
+    defaultValue: 'https://cnb.cool/yunfeiii/clipkeep/-/releases/latest/download/update.json',
   );
 }

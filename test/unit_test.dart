@@ -766,6 +766,28 @@ void main() {
       expect(info.apks['x86_64']?.url, 'https://example.com/x.apk');
       expect(info.apks['arm64-v8a']?.url, isNull);
     });
+
+    test('urls 数组按优先级保留并去重', () {
+      final UpdateInfo info = UpdateInfo.fromJson(<String, dynamic>{
+        'versionName': '1.1.2',
+        'versionCode': 6,
+        'release': 'v1.1.2',
+        'apks': <String, dynamic>{
+          'arm64-v8a': <String, dynamic>{
+            'asset': 'app-arm64-v8a-release.apk',
+            'urls': <String>[
+              'https://cnb.cool/a.apk',
+              'https://github.com/a.apk',
+              'https://cnb.cool/a.apk',
+            ],
+          },
+        },
+      });
+      expect(info.apks['arm64-v8a']?.downloadUrls, <String>[
+        'https://cnb.cool/a.apk',
+        'https://github.com/a.apk',
+      ]);
+    });
   });
 }
 

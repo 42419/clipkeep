@@ -277,7 +277,7 @@ class SettingsView extends StatelessWidget {
           icon: Icons.info_outline_rounded,
           headline: '版本',
           supportingText: info == null
-              ? '1.1.1'
+              ? '读取中…'
               : '${info.version} (${info.buildNumber})',
           trailing: Text(
             'Android',
@@ -454,12 +454,12 @@ class SettingsView extends StatelessWidget {
 
   /// 直接进 Flutter 许可证页：第三方来源与所有 pub 依赖许可。
   Future<void> _openLicenses(BuildContext context) async {
-    String version = '1.1.1';
+    String version = '未读取到版本';
     try {
       final PackageInfo info = await PackageInfo.fromPlatform();
       version = '${info.version} (${info.buildNumber})';
     } catch (_) {
-      // 读取失败保留默认版本。
+      // 读取失败不伪造版本号。
     }
     if (!context.mounted) {
       return;
