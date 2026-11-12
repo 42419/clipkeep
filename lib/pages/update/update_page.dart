@@ -11,6 +11,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../api/changelog.dart';
+import '../../api/changelog_service.dart';
 import '../../api/update_service.dart';
 import '../../utils/result.dart';
 
@@ -26,9 +27,6 @@ class _UpdatePageState extends State<UpdatePage> {
   static const MethodChannel _installer = MethodChannel(
     'clipkeep/apk_installer',
   );
-  static const String _changelogUrl =
-      'https://raw.githubusercontent.com/42419/clipkeep/main/CHANGELOG.md';
-
   final UpdateService _service = UpdateService();
   final Dio _dio = Dio();
 
@@ -65,8 +63,14 @@ class _UpdatePageState extends State<UpdatePage> {
       _currentVersion = pkg.version;
       _currentCode = int.tryParse(pkg.buildNumber) ?? 0;
     } catch (_) {
-      _currentVersion = '1.1.1';
-      _currentCode = 1;
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = '无法读取当前版本，请重试';
+          _lastCheckedAt = DateTime.now();
+        });
+      }
+      return;
     }
     final Result<UpdateInfo> result = await _service.check();
     if (!mounted) {
@@ -91,26 +95,15 @@ class _UpdatePageState extends State<UpdatePage> {
     }
   }
 
-  /// 拉远端 CHANGELOG 取出该版本的说明；失败只影响说明区，不影响下载。
+  /// 从内置 CHANGELOG 取出该版本的说明；失败只影响说明区，不影响下载。
   Future<void> _loadNotes(String versionName) async {
-    try {
-      final Response<String> response = await _dio.get<String>(
-        _changelogUrl,
-        options: Options(
-          responseType: ResponseType.plain,
-          receiveTimeout: const Duration(seconds: 10),
-        ),
-      );
-      final String? text = response.data;
-      if (text == null || text.isEmpty) {
-        return;
-      }
-      final ChangelogEntry? entry = Changelog.parse(text).entryFor(versionName);
-      if (mounted && entry != null) {
-        setState(() => _notes = entry);
-      }
-    } catch (_) {
-      // 说明拿不到就不展示，不阻塞更新流程。
+    final Result<Changelog> result = await ChangelogService().fetch();
+    if (!mounted || result is! Ok<Changelog>) {
+      return;
+    }
+    final ChangelogEntry? entry = result.value.entryFor(versionName);
+    if (entry != null) {
+      setState(() => _notes = entry);
     }
   }
 
@@ -135,7 +128,8 @@ class _UpdatePageState extends State<UpdatePage> {
       return;
     }
     final UpdateApk? apk = info.apkFor(_abiNames());
-    if (apk == null || apk.url == null || apk.url!.isEmpty) {
+    final List<String> urls = apk?.downloadUrls ?? const <String>[];
+    if (apk == null || urls.isEmpty) {
       _showSnack('这个版本没有适配当前设备的安装包');
       return;
     }
@@ -155,27 +149,54 @@ class _UpdatePageState extends State<UpdatePage> {
         await updates.create(recursive: true);
       }
       file = File('${updates.path}/${apk.asset}');
-      if (await file.exists()) {
-        await file.delete();
-      }
-      await _dio.download(
-        apk.url!,
-        file.path,
-        onReceiveProgress: (int received, int total) {
-          if (!mounted) {
-            return;
+      Object? lastError;
+      for (int i = 0; i < urls.length; i++) {
+        try {
+          if (await file.exists()) {
+            await file.delete();
           }
-          setState(() {
-            _received = received;
-            _total = total > 0 ? total : apk.size;
-            _progress = _total > 0 ? received / _total : 0;
-          });
-        },
-      );
-      final String digest = sha256.convert(await file.readAsBytes()).toString();
-      if (apk.sha256.isNotEmpty && digest != apk.sha256) {
-        await file.delete();
-        throw const UpdateException('安装包校验失败，请重试');
+          await _dio.download(
+            urls[i],
+            file.path,
+            onReceiveProgress: (int received, int total) {
+              if (!mounted) {
+                return;
+              }
+              setState(() {
+                _received = received;
+                _total = total > 0 ? total : apk.size;
+                _progress = _total > 0 ? received / _total : 0;
+              });
+            },
+          );
+          final String digest = sha256
+              .convert(await file.readAsBytes())
+              .toString();
+          if (apk.sha256.isNotEmpty && digest != apk.sha256) {
+            await file.delete();
+            throw const UpdateException('安装包校验失败');
+          }
+          lastError = null;
+          break;
+        } catch (e) {
+          lastError = e;
+          if (await file.exists()) {
+            await file.delete();
+          }
+          if (i == urls.length - 1) {
+            rethrow;
+          }
+          if (mounted) {
+            setState(() {
+              _progress = 0;
+              _received = 0;
+            });
+            _showSnack('当前下载源失败，正在尝试备用源…');
+          }
+        }
+      }
+      if (lastError != null) {
+        throw lastError;
       }
       if (!mounted) {
         return;

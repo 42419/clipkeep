@@ -12,6 +12,7 @@ class UpdateApk {
     required this.size,
     required this.sha256,
     this.url,
+    this.urls = const <String>[],
   });
 
   /// Release 资产名，如 `app-arm64-v8a-release.apk`。
@@ -23,20 +24,65 @@ class UpdateApk {
   /// 小写十六进制 SHA-256，下载后校验。
   final String sha256;
 
-  /// 直链；为空时从 Release 资产里按 [asset] 匹配。
+  /// 单一直链；兼容旧清单。
   final String? url;
 
+  /// 按优先级排列的下载直链（CNB 在前，GitHub 在后）。
+  final List<String> urls;
+
+  /// 去重后的下载顺序：`url` 优先，其次 `urls`。
+  List<String> get downloadUrls {
+    final List<String> result = <String>[];
+    final Set<String> seen = <String>{};
+    for (final String item in <String>[?url, ...urls]) {
+      final String value = item.trim();
+      if (value.isNotEmpty && seen.add(value)) {
+        result.add(value);
+      }
+    }
+    return result;
+  }
+
   factory UpdateApk.fromJson(Map<String, dynamic> json) {
+    final List<String> parsedUrls = <String>[];
+    final dynamic rawUrls = json['urls'];
+    if (rawUrls is List) {
+      for (final dynamic item in rawUrls) {
+        if (item is String) {
+          parsedUrls.add(item);
+        } else if (item is Map) {
+          final String value = (item['url'] ?? '').toString();
+          if (value.isNotEmpty) {
+            parsedUrls.add(value);
+          }
+        }
+      }
+    }
     return UpdateApk(
       asset: (json['asset'] ?? '').toString(),
       size: (json['size'] as num?)?.toInt() ?? 0,
       sha256: (json['sha256'] ?? '').toString().toLowerCase(),
       url: json['url']?.toString(),
+      urls: parsedUrls,
     );
   }
 
-  UpdateApk withUrl(String value) {
-    return UpdateApk(asset: asset, size: size, sha256: sha256, url: value);
+  UpdateApk withUrls(List<String> values) {
+    final List<String> unique = <String>[];
+    final Set<String> seen = <String>{};
+    for (final String item in values) {
+      final String value = item.trim();
+      if (value.isNotEmpty && seen.add(value)) {
+        unique.add(value);
+      }
+    }
+    return UpdateApk(
+      asset: asset,
+      size: size,
+      sha256: sha256,
+      url: unique.isEmpty ? null : unique.first,
+      urls: unique,
+    );
   }
 }
 
@@ -142,16 +188,18 @@ class UpdateException implements Exception {
   String toString() => message;
 }
 
-/// 检查更新：读取更新清单，必要时从 GitHub Release 补齐下载直链。
+/// 检查更新：CNB 为主源，GitHub 为保底。
 ///
 /// 清单来源优先级：
-/// 1. 构建期注入的 `UPDATE_MANIFEST_URL`（换国内源时用）
-/// 2. GitHub `releases/latest` 里的 `update.json` 资产
+/// 1. 构建期注入的 `UPDATE_MANIFEST_URL`（自定义源；失败会继续走主源）
+/// 2. CNB `releases/latest/download/update.json`
+/// 3. GitHub `releases/latest` 里的 `update.json` 资产
 class UpdateService {
   UpdateService({
     Dio? dio,
     this.manifestUrl = AppConstants.updateManifestUrl,
     this.repo = AppConstants.githubRepo,
+    this.cnbRepo = AppConstants.cnbRepo,
   }) : _dio =
            dio ??
            Dio(
@@ -168,13 +216,21 @@ class UpdateService {
   final Dio _dio;
   final String manifestUrl;
   final String repo;
+  final String cnbRepo;
 
   /// 拉取最新发布信息；网络或格式异常统一转成 [Err]。
   Future<Result<UpdateInfo>> check() async {
     try {
-      final UpdateInfo info = manifestUrl.trim().isNotEmpty
-          ? await _fromManifestUrl(manifestUrl.trim())
-          : await _fromLatestRelease();
+      UpdateInfo info;
+      if (manifestUrl.trim().isNotEmpty) {
+        try {
+          info = await _fromManifestUrl(manifestUrl.trim());
+        } catch (_) {
+          info = await _fromPrimary();
+        }
+      } else {
+        info = await _fromPrimary();
+      }
       if (info.versionCode <= 0 || info.apks.isEmpty) {
         return const Err(AppError('更新清单缺少版本号或安装包信息'));
       }
@@ -186,6 +242,11 @@ class UpdateService {
     } catch (e) {
       return Err(AppError('检查更新失败：$e'));
     }
+  }
+
+  /// CNB 主源失败后回退 GitHub。
+  Future<UpdateInfo> _fromPrimary() async {
+    return _fromLatestRelease();
   }
 
   Future<UpdateInfo> _fromManifestUrl(String url) async {
@@ -201,13 +262,21 @@ class UpdateService {
     final Response<dynamic> response = await _dio.get<dynamic>(
       'https://api.github.com/repos/$repo/releases/latest',
     );
-    final Map<String, dynamic>? release = _asMap(response.data);
+    return _fromRelease(response.data, cnbFirst: false);
+  }
+
+  /// CNB 与 GitHub 的 latest release 结构相近，共用解析。
+  Future<UpdateInfo> _fromRelease(
+    dynamic data, {
+    required bool cnbFirst,
+  }) async {
+    final Map<String, dynamic>? release = _asMap(data);
     if (release == null) {
       throw const UpdateException('获取最新版本失败');
     }
     final List<dynamic> assets =
         (release['assets'] as List?) ?? const <dynamic>[];
-    final Map<String, String> urls = <String, String>{};
+    final Map<String, List<String>> urls = <String, List<String>>{};
     String? manifestUrl;
     for (final dynamic item in assets) {
       final Map<String, dynamic> asset = _asMap(item) ?? <String, dynamic>{};
@@ -216,7 +285,7 @@ class UpdateService {
       if (name.isEmpty || url.isEmpty) {
         continue;
       }
-      urls[name] = url;
+      urls.putIfAbsent(name, () => <String>[]).add(url);
       if (name == 'update.json') {
         manifestUrl = url;
       }
@@ -229,23 +298,38 @@ class UpdateService {
     if (json == null) {
       throw const UpdateException('更新清单格式异常');
     }
-    return _resolveAssetUrls(UpdateInfo.fromJson(json), assetUrls: urls);
+    return _resolveAssetUrls(
+      UpdateInfo.fromJson(json),
+      assetUrls: urls,
+      cnbFirst: cnbFirst,
+    );
   }
 
-  /// 清单里没写直链时，用 Release 资产名补上。
+  /// 清单里没写直链时，用 Release 资产名补上；同时补另一平台的镜像。
   UpdateInfo _resolveAssetUrls(
     UpdateInfo info, {
-    Map<String, String> assetUrls = const <String, String>{},
+    Map<String, List<String>> assetUrls = const <String, List<String>>{},
+    bool cnbFirst = true,
   }) {
+    final String tag = info.release.trim();
+    final String cnbBase =
+        'https://cnb.cool/${AppConstants.cnbRepo}/-/releases/download/$tag';
+    final String githubBase = 'https://github.com/$repo/releases/download/$tag';
+    final List<String> mirrors = tag.isEmpty
+        ? const <String>[]
+        : cnbFirst
+        ? <String>[cnbBase, githubBase]
+        : <String>[githubBase, cnbBase];
     final Map<String, UpdateApk> apks = <String, UpdateApk>{};
     for (final MapEntry<String, UpdateApk> entry in info.apks.entries) {
       final UpdateApk apk = entry.value;
-      if (apk.url != null && apk.url!.isNotEmpty) {
-        apks[entry.key] = apk;
-        continue;
-      }
-      final String? url = assetUrls[apk.asset];
-      apks[entry.key] = url == null ? apk : apk.withUrl(url);
+      final List<String> candidates = <String>[
+        if (apk.url != null) apk.url!,
+        ...apk.urls,
+        ...?assetUrls[apk.asset],
+        for (final String base in mirrors) '$base/${apk.asset}',
+      ];
+      apks[entry.key] = apk.withUrls(candidates);
     }
     return UpdateInfo(
       versionName: info.versionName,

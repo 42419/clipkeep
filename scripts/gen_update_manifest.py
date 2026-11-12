@@ -81,6 +81,12 @@ def main() -> None:
         default="",
         help="可选：把该版本的 CHANGELOG 正文写成 Release 说明文件",
     )
+    parser.add_argument(
+        "--asset-base-url",
+        action="append",
+        default=[],
+        help="可选：Release 资产基地址，可重复；按顺序写入 urls（CNB 在前，GitHub 在后）",
+    )
     parser.add_argument("--pubspec", default="pubspec.yaml")
     parser.add_argument("--changelog", default="CHANGELOG.md")
     args = parser.parse_args()
@@ -94,10 +100,16 @@ def main() -> None:
         path = apk_dir / asset_name
         if not path.exists():
             sys.exit(f"缺少构建产物：{path}")
+        urls = [
+            f"{base.rstrip('/')}/{asset_name}"
+            for base in args.asset_base_url
+            if base.strip()
+        ]
         apks[abi] = {
             "asset": asset_name,
             "size": path.stat().st_size,
             "sha256": sha256_of(path),
+            **({"urls": urls} if urls else {}),
         }
 
     manifest = {

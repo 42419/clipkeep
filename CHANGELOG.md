@@ -5,6 +5,16 @@
 
 > 结构即接口：解析规则见文末「App 解析约定」，改动版本块格式前先读那一节。
 
+## [1.1.4] - 2026-11-11
+
+<!-- meta: versionCode=8 release=v1.1.4 -->
+
+### 变更
+- 国内更新源切换为 CNB，GitHub 保底；Release 附件由 CNB 国内对象存储分发。
+- `update.json` 同时写入 CNB 与 GitHub 的 APK 直链，CNB 失败自动回退 GitHub。
+- 新增 `Sync CNB Release` workflow，支持 Android APK 完成后自动同步，也可手动指定 tag 重跑。
+- 构建流水线只负责 GitHub Release；CNB 同步独立执行，失败不影响 GitHub 发布。
+
 ## [1.1.1] - 2026-11-11
 
 <!-- meta: versionCode=5 release=v1.1.1 -->
@@ -34,13 +44,15 @@ Android 端抖音视频下载器首个版本。
 - 前台服务：下载进度与完成通知，Android 13+ 首次下载申请通知权限。
 - 结果页：展示分辨率、帧率、码率、编码与估算大小；支持仅音频、仅封面、视频+封面；可复制原链、浏览器打开、重新解析。
 - 已完成记录：按文件名回查 MediaStore，支持打开与分享成品。
-- 设置：保存位置（相册 / `Download/ClipKeep`）、同时下载数、剪贴板自动检测、动态取色、缓存清理、完整更新日志。
+- 设置：解析服务凭证、保存位置（相册 / `Download/ClipKeep`）、同时下载数、剪贴板自动检测、动态取色、缓存清理、完整更新日志。
 - 应用内更新：读取 Release 的 `update.json`，按 ABI 选包、校验 SHA-256 后经 FileProvider 调起系统安装。
+- 完整更新日志与更新说明内置在 APK 中，离线可读。
 
 ### 变更
 - 界面使用原生 Material 3 + 动态取色，跟随系统深色；全应用 edge-to-edge。
 - Motion Photo 合成前用 Android `Bitmap` 转无元数据 JPEG。
 - 数字（大小、速度、剩余、百分比）统一使用等宽数字。
+- 应用内更新优先使用 CNB，失败回退 GitHub；每个 APK 同时写入两平台直链。
 - 许可证采用 MIT。
 
 ---
@@ -51,27 +63,15 @@ Android 端抖音视频下载器首个版本。
 
 ### 1. 版本块格式
 
-标题行形如 `## [1.1.1] - 2026-11-11
-
-<!-- meta: versionCode=5 release=v1.1.1 -->
-
-### 新增
-- 设置页「解析服务」支持手动填写 DTK 地址与 API Key，输入后自动保存，也可点「保存」立即落盘；修改或点击「清除」前一直保留。
-- 正式构建不再内置 DTK 地址与 Key，避免共用 Key 随 APK 泄露、被盗刷。
-
-### 变更
-- 未配置解析服务时，解析提示改为引导用户去设置页填写。
-- 「测试连接」仅在地址与 Key 都已填写时可用。
-
-## [1.1.0] - 2026-11-11`，紧随其后是一行渲染时不可见的 meta 注释：
-`<!-- meta: versionCode=4 release=v1.1.0 -->`。
+标题行形如 `## [1.1.4] - 2026-11-11`，紧随其后是一行渲染时不可见的 meta 注释：
+`<!-- meta: versionCode=8 release=v1.1.4 -->`。
 
 | 字段 | 规则 |
 |---|---|
-| `versionName` | 形如 `1.1.0`（`\d+\.\d+\.\d+`），与 `pubspec.yaml` 的 `version` 前半段一致 |
+| `versionName` | 形如 `1.1.4`（`\d+\.\d+\.\d+`），与 `pubspec.yaml` 的 `version` 前半段一致 |
 | `YYYY-MM-DD` | 该版本发布日期 |
 | `versionCode` | 与 `pubspec.yaml` 的 `+<n>` 一致，**单调递增**；App 在 versionName 相同时用它兜底比较 |
-| `release` | 该版本对应 GitHub Release 的 tag，用于在清单里标注发布目标 |
+| `release` | 该版本对应 Release 的 tag，用于在清单里标注发布目标 |
 
 - App 判断是否有更新时**先比 `versionName`**（按语义化逐段比数字，`1.10.0 > 1.9.9`），相同时再比 `versionCode`。
 - `meta` 注释必须紧跟在标题行之后（中间最多一个空行）。
