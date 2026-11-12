@@ -4,7 +4,7 @@ Android 端视频下载工具：粘贴抖音分享链接，解析后选画质保
 
 ## 功能
 
-- 抖音：走自部署 DTK 解析服务，支持多画质、仅音频（无独立音轨时用系统 MediaExtractor 无损抽取）、精确发布时间。
+- 抖音：走自部署 DTK 解析服务，支持多画质、精确发布时间。
 - 图文/图集：可保存全部或单张图片；实况图默认合成为 Android Motion Photo，也可选「图片+视频」分别保存；文字类型按单张图片处理。首页右上角提供手动合成入口，可自选本地图片与视频。
 - 下载：多连接 Range 分片，支持断点续传、备用地址回退；失败按退避自动重试并刷新签名地址，网络恢复后也会重试网络失败的记录；同时下载数可设（1~3），其余排队；启动前检查剩余空间。
 - 文件：可读文件名（`日期-类型-作者-标题-清晰度-内容ID`），支持在下载记录里打开或分享成品。
@@ -43,7 +43,7 @@ lib/
   api/         DtkClient + dtk_mapper、DownloaderApi、UpdateService（update.json）、Changelog 解析
   pages/       main_page、result_page、update_page、home/downloads/settings 三个 view
   stores/      DownloaderStore（解析 + 任务）、SettingsStore、MainTabController
-  utils/       media_downloader（分片/续传/原生音轨与 JPEG 处理）、format、image_headers
+  utils/       media_downloader（分片/续传/原生 JPEG 处理）、format、image_headers
   viewmodels/  ParsedSource / MediaPart / MediaStream、DownloadTask
   theme/ constants/ components/ routes/
 scripts/       gen_update_manifest.py（CI 生成 update.json 与 Release 说明）
@@ -58,7 +58,6 @@ test/          unit_test.dart（纯 Dart 单元测试）
 - 进行中任务会持久化，但签名地址不持久化：重启后继续会重新拉流并从零下载（记录和未完成状态保留）；同一画质且编码/带宽一致的手动重试会复用临时分片；档位或编码变化、重启后均从零下载。
 - 下载期间有前台服务与通知，但强制停止应用或被系统清理后仍会中断；重启后任务保留为暂停，需手动继续。
 - 网络失败会自动重试 2 次（2s / 5s）；长时间断网或签名过期超过重试窗口时，仍需手动「重试」。
-- 「仅音频」直接把视频里的音轨复制为 M4A，不转码；极少数非 AAC 音轨可能因系统封装限制而失败。
 - 图文/图集：支持保存图片；实况图默认合成 Android Motion Photo，也可改用「图片+视频」分别保存；文字类型本质是单张图片，不单独提供正文下载。
 - Motion Photo 依赖相册支持：部分机型或旧系统只显示静态图，此时请用「图片+视频」分开保存，或从首页右上角手动合成后分享到支持的应用。
 - 抖音解析依赖自部署服务，不是内置能力。

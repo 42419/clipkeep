@@ -41,7 +41,6 @@ class DownloadTask {
     required this.createdAt,
     this.part,
     this.videoQuality,
-    this.audioOnly = false,
     this.coverOnly = false,
     this.saveCover = false,
     this.coverUrl,
@@ -65,7 +64,6 @@ class DownloadTask {
   final String qualityLabel;
   MediaPart? part;
   final int? videoQuality;
-  final bool audioOnly;
   final bool coverOnly;
   final bool saveCover;
   final String? coverUrl;
@@ -112,7 +110,6 @@ class DownloadTask {
     'status': status.name,
     'progress': progress,
     'videoQuality': videoQuality,
-    'audioOnly': audioOnly,
     'coverOnly': coverOnly,
     'saveCover': saveCover,
     'error': error,
@@ -153,7 +150,6 @@ class DownloadTask {
       sourceUrl: json['sourceUrl'] as String?,
       thumbnailPath: json['thumbnailPath'] as String?,
       videoQuality: (json['videoQuality'] as num?)?.toInt(),
-      audioOnly: json['audioOnly'] == true,
       coverOnly: json['coverOnly'] == true,
       saveCover: json['saveCover'] == true,
       error: json['error'] as String?,

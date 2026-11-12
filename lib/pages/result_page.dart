@@ -32,7 +32,6 @@ class ResultPage extends StatefulWidget {
 
 class _ResultPageState extends State<ResultPage> {
   int _qualityIndex = 0;
-  bool _audioOnly = false;
   bool _coverOnly = false;
   bool _videoWithCover = false;
   String? _activeTaskId;
@@ -1243,27 +1242,12 @@ class _ResultPageState extends State<ResultPage> {
             _optionChip(
               theme,
               scheme,
-              label: '仅音频',
-              icon: Icons.music_note,
-              selected: _audioOnly,
-              onTap: () => setState(() {
-                _audioOnly = !_audioOnly;
-                if (_audioOnly) {
-                  _coverOnly = false;
-                  _videoWithCover = false;
-                }
-              }),
-            ),
-            _optionChip(
-              theme,
-              scheme,
               label: '仅封面',
               icon: Icons.image_outlined,
               selected: _coverOnly,
               onTap: () => setState(() {
                 _coverOnly = !_coverOnly;
                 if (_coverOnly) {
-                  _audioOnly = false;
                   _videoWithCover = false;
                 }
               }),
@@ -1277,7 +1261,6 @@ class _ResultPageState extends State<ResultPage> {
               onTap: () => setState(() {
                 _videoWithCover = !_videoWithCover;
                 if (_videoWithCover) {
-                  _audioOnly = false;
                   _coverOnly = false;
                 }
               }),
@@ -1417,9 +1400,7 @@ class _ResultPageState extends State<ResultPage> {
     final MediaStream? selected = _selectedStream(part);
     final int? quality = selected?.quality;
     final String qualityText = selected?.displayLabel ?? '视频';
-    final String qLabel = _audioOnly
-        ? '仅音频'
-        : _coverOnly
+    final String qLabel = _coverOnly
         ? '仅封面'
         : _videoWithCover
         ? '$qualityText + 封面'
@@ -1429,8 +1410,7 @@ class _ResultPageState extends State<ResultPage> {
       title: store.source?.title ?? part.title,
       platform: store.source?.platformLabel ?? '抖音',
       qualityLabel: qLabel,
-      videoQuality: (_audioOnly || _coverOnly) ? null : quality,
-      audioOnly: _audioOnly,
+      videoQuality: _coverOnly ? null : quality,
       coverOnly: _coverOnly,
       saveCover: _videoWithCover,
       coverUrl: store.source?.coverUrl,

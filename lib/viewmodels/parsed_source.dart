@@ -176,25 +176,9 @@ class MediaPart {
 
   /// 手动重试时判断新旧流是否仍是同一选择，决定能否复用临时分片。
   /// 除画质外必须校验 codec 与带宽/大小，避免把另一编码的文件续接成坏文件。
-  bool sameDownloadSelection(
-    MediaPart other, {
-    int? videoQuality,
-    bool audioOnly = false,
-  }) {
+  bool sameDownloadSelection(MediaPart other, {int? videoQuality}) {
     final MediaStream? oldAudio = pickAudio();
     final MediaStream? newAudio = other.pickAudio();
-    if (audioOnly) {
-      if (oldAudio != null || newAudio != null) {
-        return oldAudio != null &&
-            newAudio != null &&
-            _sameAudioStream(oldAudio, newAudio);
-      }
-      final MediaStream? oldVideo = pickSmallestVideo();
-      final MediaStream? newVideo = other.pickSmallestVideo();
-      return oldVideo != null &&
-          newVideo != null &&
-          _sameVideoStream(oldVideo, newVideo);
-    }
     final MediaStream? oldVideo = pickVideoQuality(videoQuality);
     final MediaStream? newVideo = other.pickVideoQuality(videoQuality);
     if (oldVideo == null ||
@@ -248,22 +232,6 @@ class MediaPart {
       return false;
     }
     return true;
-  }
-
-  /// 仅音频抽取时用最低画质视频，避免为了音轨下载整段最高码率。
-  MediaStream? pickSmallestVideo() {
-    final videos = streams.where((s) => s.kind == 'video').toList();
-    if (videos.isEmpty) {
-      return null;
-    }
-    videos.sort((a, b) {
-      final int byQuality = a.quality.compareTo(b.quality);
-      if (byQuality != 0) {
-        return byQuality;
-      }
-      return (a.bandwidth ?? 0).compareTo(b.bandwidth ?? 0);
-    });
-    return videos.first;
   }
 }
 

@@ -17,7 +17,7 @@ import '../viewmodels/parsed_source.dart';
 import 'media_naming.dart';
 import 'result.dart';
 
-/// 下载视频/音频流，支持按画质、仅音频、仅封面、视频+封面，并保存到相册/下载目录。
+/// 下载视频流，支持按画质、仅封面、视频+封面，并保存到相册/下载目录。
 class MediaDownloader {
   MediaDownloader({Dio? dio}) : _dio = dio ?? Dio();
 
@@ -40,7 +40,6 @@ class MediaDownloader {
   Future<Result<String>> download(
     MediaPart part, {
     int? videoQuality,
-    bool audioOnly = false,
     bool coverOnly = false,
     bool saveCover = false,
     String? coverUrl,
@@ -58,8 +57,7 @@ class MediaDownloader {
       // 读取失败默认保存到相册。
     }
     try {
-      // 仅音频始终写 Download/ClipKeep，不申请相册权限；视频/封面才预检。
-      if (!audioOnly && saveToGallery && !await _ensureGalleryAccess()) {
+      if (saveToGallery && !await _ensureGalleryAccess()) {
         return const Err(AppError('没有相册写入权限'));
       }
       final dir =
@@ -83,18 +81,6 @@ class MediaDownloader {
           onProgress,
           onSavedFiles: onSavedFiles,
           saveToGallery: saveToGallery,
-        );
-      }
-      if (audioOnly) {
-        return await _downloadAudioOnly(
-          part,
-          dir.path,
-          stamp,
-          base,
-          agg,
-          cancelToken,
-          onProgress,
-          onSavedFiles,
         );
       }
       return await _downloadVideo(
@@ -348,28 +334,8 @@ class MediaDownloader {
   }
 
   /// 续传前探测当前选择的总字节数；任一路无法确认就返回 null。
-  Future<int?> probeSelectionTotal(
-    MediaPart part, {
-    int? videoQuality,
-    bool audioOnly = false,
-  }) async {
+  Future<int?> probeSelectionTotal(MediaPart part, {int? videoQuality}) async {
     try {
-      if (audioOnly) {
-        final MediaStream? audio = part.pickAudio();
-        final MediaStream? video = audio == null
-            ? part.pickSmallestVideo()
-            : null;
-        final MediaStream? stream = audio ?? video;
-        if (stream == null) {
-          return null;
-        }
-        final ({bool supported, int? total}) probe = await _probeRange(
-          stream.primaryUrl,
-          stream.headers,
-          null,
-        );
-        return probe.total;
-      }
       final MediaStream? video = part.pickVideoQuality(videoQuality);
       if (video == null) {
         return null;
@@ -891,166 +857,6 @@ class MediaDownloader {
     }
   }
 
-  Future<Result<String>> _downloadAudioOnly(
-    MediaPart part,
-    String dirPath,
-    String stamp,
-    String base,
-    _ByteAggregator agg,
-    CancelToken? cancelToken,
-    void Function(DownloadProgress progress)? onProgress,
-    void Function(List<SavedMediaFile> files)? onSavedFiles,
-  ) async {
-    final audio = part.pickAudio();
-    if (audio == null || audio.primaryUrl.isEmpty) {
-      // 抖音等单文件 mp4 没有独立音频流：下载视频后抽取音轨。
-      return _extractAudioFromVideo(
-        part,
-        dirPath,
-        stamp,
-        base,
-        agg,
-        cancelToken,
-        onProgress,
-        onSavedFiles,
-      );
-    }
-    final tempPath = '$dirPath/clipkeep_a_$stamp.m4s';
-    await _downloadStream(
-      audio,
-      tempPath,
-      agg,
-      'audio',
-      cancelToken,
-      onProgress,
-    );
-    agg.finishStreamKey('audio');
-    if (cancelToken?.isCancelled ?? false) {
-      return const Err(AppError('已暂停'));
-    }
-
-    final String displayName = fitFileName('$base-audio', '.m4a');
-    final String? savedPath = await _saveToDownloads(
-      tempPath,
-      displayName,
-      'audio/mp4',
-    );
-
-    final int audioLen = await File(tempPath).length();
-    onProgress?.call(
-      DownloadProgress(
-        fraction: 1,
-        receivedBytes: audioLen,
-        totalBytes: audioLen,
-      ),
-    );
-
-    if (savedPath != null) {
-      await _cleanupQuietly(<String>[tempPath]);
-      onSavedFiles?.call(<SavedMediaFile>[
-        SavedMediaFile(name: displayName, mime: 'audio/mp4'),
-      ]);
-      return Ok('已保存音频到 $savedPath');
-    }
-
-    final outDir = Directory('$dirPath/ClipKeep');
-    if (!await outDir.exists()) {
-      await outDir.create(recursive: true);
-    }
-    final fallbackPath = '${outDir.path}/$displayName';
-    try {
-      await File(tempPath).rename(fallbackPath);
-    } catch (_) {
-      await File(tempPath).copy(fallbackPath);
-      await _cleanupQuietly(<String>[tempPath]);
-    }
-    return Ok('已保存音频到应用目录（卸载后删除）：$fallbackPath');
-  }
-
-  /// 无独立音频流时（如抖音单文件 mp4）：下载视频后用系统 MediaExtractor 抽取音轨。
-  Future<Result<String>> _extractAudioFromVideo(
-    MediaPart part,
-    String dirPath,
-    String stamp,
-    String base,
-    _ByteAggregator agg,
-    CancelToken? cancelToken,
-    void Function(DownloadProgress progress)? onProgress,
-    void Function(List<SavedMediaFile> files)? onSavedFiles,
-  ) async {
-    final MediaStream? video = part.pickSmallestVideo();
-    if (video == null || video.primaryUrl.isEmpty) {
-      return const Err(AppError('没有可下载的音频流'));
-    }
-    final String tempVideo = '$dirPath/clipkeep_av_$stamp.m4s';
-    await _downloadStream(
-      video,
-      tempVideo,
-      agg,
-      'video',
-      cancelToken,
-      onProgress,
-    );
-    agg.finishStreamKey('video');
-    if (cancelToken?.isCancelled ?? false) {
-      return const Err(AppError('已暂停'));
-    }
-
-    final String displayName = fitFileName('$base-audio', '.m4a');
-    final String outPath = '$dirPath/$displayName';
-    try {
-      await _mediaStore.invokeMethod<void>('extractAudio', <String, Object>{
-        'input': tempVideo,
-        'output': outPath,
-      });
-    } on PlatformException catch (e) {
-      await _cleanupQuietly(<String>[tempVideo, outPath]);
-      return Err(AppError('提取音频失败：${e.message ?? e.code}'));
-    } catch (e) {
-      await _cleanupQuietly(<String>[tempVideo, outPath]);
-      return Err(AppError('提取音频失败：${_describe(e)}', cause: e));
-    }
-    // 抽取本身是阻塞调用，暂停请求只能在这里生效：丢弃音轨，保留视频源供续传。
-    if (cancelToken?.isCancelled ?? false) {
-      await _cleanupQuietly(<String>[outPath]);
-      return const Err(AppError('已暂停'));
-    }
-    await _cleanupQuietly(<String>[tempVideo]);
-
-    final String? savedPath = await _saveToDownloads(
-      outPath,
-      displayName,
-      'audio/mp4',
-    );
-    final int audioLen = await File(outPath).length();
-    onProgress?.call(
-      DownloadProgress(
-        fraction: 1,
-        receivedBytes: audioLen,
-        totalBytes: audioLen,
-      ),
-    );
-    if (savedPath != null) {
-      await _cleanupQuietly(<String>[outPath]);
-      onSavedFiles?.call(<SavedMediaFile>[
-        SavedMediaFile(name: displayName, mime: 'audio/mp4'),
-      ]);
-      return Ok('已保存音频到 $savedPath');
-    }
-    final Directory outDir = Directory('$dirPath/ClipKeep');
-    if (!await outDir.exists()) {
-      await outDir.create(recursive: true);
-    }
-    final String fallbackPath = '${outDir.path}/$displayName';
-    try {
-      await File(outPath).rename(fallbackPath);
-    } catch (_) {
-      await File(outPath).copy(fallbackPath);
-      await _cleanupQuietly(<String>[outPath]);
-    }
-    return Ok('已保存音频到应用目录（卸载后删除）：$fallbackPath');
-  }
-
   Future<Result<String>> _downloadCoverOnly(
     String? coverUrl,
     String dirPath,
@@ -1248,9 +1054,6 @@ class MediaDownloader {
           await getApplicationDocumentsDirectory();
       final List<String> paths = <String>[
         '${dir.path}/clipkeep_v_$downloadId.m4s',
-        '${dir.path}/clipkeep_a_$downloadId.m4s',
-        '${dir.path}/clipkeep_av_$downloadId.m4s',
-        '${dir.path}/clipkeep_audio_$downloadId.m4a',
         for (final String ext in <String>[
           'jpg',
           'jpeg',
@@ -1263,15 +1066,8 @@ class MediaDownloader {
           '${dir.path}/clipkeep_cover_$downloadId.$ext',
         '${dir.path}/clipkeep_$downloadId.mp4',
       ];
-      for (final String name in <String>[
-        'clipkeep_v_$downloadId.m4s',
-        'clipkeep_a_$downloadId.m4s',
-        'clipkeep_av_$downloadId.m4s',
-        'clipkeep_audio_$downloadId.m4a',
-      ]) {
-        for (int i = 0; i < 64; i++) {
-          paths.add('${dir.path}/$name.part$i');
-        }
+      for (int i = 0; i < 64; i++) {
+        paths.add('${dir.path}/clipkeep_v_$downloadId.m4s.part$i');
       }
       await _cleanupQuietly(paths);
     } catch (_) {

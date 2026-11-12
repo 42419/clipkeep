@@ -214,6 +214,33 @@ void main() {
       });
       expect(task.platform, '抖音');
     });
+
+    test('仅音频历史记录不再加载', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'download_tasks': jsonEncode(<Map<String, dynamic>>[
+          <String, dynamic>{
+            'id': 'audio-1',
+            'title': '旧音频任务',
+            'platform': '抖音',
+            'qualityLabel': '仅音频',
+            'createdAt': '2026-11-01T10:00:00.000',
+            'status': 'completed',
+            'audioOnly': true,
+          },
+          <String, dynamic>{
+            'id': 'video-1',
+            'title': '正常任务',
+            'platform': '抖音',
+            'qualityLabel': '720P',
+            'createdAt': '2026-11-01T10:00:00.000',
+            'status': 'completed',
+          },
+        ]),
+      });
+      final DownloaderStore store = DownloaderStore(_RetryApi());
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(store.tasks.map((DownloadTask t) => t.id), <String>['video-1']);
+    });
   });
 
   group('解析服务凭证', () {
@@ -449,10 +476,6 @@ void main() {
       expect(audioPart.pickAudio()?.quality, 128000);
     });
 
-    test('仅音频抽轨选最低视频画质', () {
-      expect(part.pickSmallestVideo()?.quality, 720);
-    });
-
     test('同画质重试才允许复用临时分片', () {
       const MediaPart same = MediaPart(
         id: '7300000000000000001',
@@ -521,13 +544,13 @@ void main() {
     test('未完成任务保留 ID/画质/选项，重启后流需重新拉取', () {
       final DownloadTask task = DownloadTask(
         id: 'task-1',
-        title: '多 P 测试',
+        title: '下载任务测试',
         platform: '抖音',
         qualityLabel: '1080P',
         createdAt: DateTime(2026, 11, 7),
         part: const MediaPart(
-          id: '7300000000000000001-1',
-          title: 'P2',
+          id: '7300000000000000001',
+          title: '测试作品',
           durationSeconds: 60,
           streams: <MediaStream>[],
         ),
@@ -538,7 +561,7 @@ void main() {
       );
       final DownloadTask restored = DownloadTask.fromRecord(task.toRecord());
       expect(restored.status, DownloadStatus.paused);
-      expect(restored.part?.id, '7300000000000000001-1');
+      expect(restored.part?.id, '7300000000000000001');
       expect(restored.part?.streams, isEmpty);
       expect(restored.videoQuality, 1080);
       expect(restored.saveCover, isTrue);
@@ -580,7 +603,7 @@ void main() {
         dio: Dio()..httpClientAdapter = adapter,
       );
       const MediaPart part = MediaPart(
-        id: '7300000000000000001-1',
+        id: '7300000000000000001',
         title: '测试',
         durationSeconds: 1,
         streams: <MediaStream>[
@@ -603,7 +626,6 @@ void main() {
         ],
       );
       expect(await media.probeSelectionTotal(part, videoQuality: 720), 1200);
-      expect(await media.probeSelectionTotal(part, audioOnly: true), 200);
     });
 
     test('retryTask 防重入，只发起一次刷新', () async {
@@ -617,7 +639,7 @@ void main() {
         qualityLabel: '720P',
         createdAt: DateTime(2026, 11, 8),
         part: const MediaPart(
-          id: '7300000000000000001-1',
+          id: '7300000000000000001',
           title: '测试',
           durationSeconds: 1,
           streams: <MediaStream>[
@@ -840,21 +862,16 @@ class _RetryApi extends DownloaderApi {
   Future<void> cleanupOrphans(Set<String> keepIds) async {}
 
   @override
-  Future<int?> probeSelectionTotal(
-    MediaPart part, {
-    int? videoQuality,
-    bool audioOnly = false,
-  }) async => 1000;
+  Future<int?> probeSelectionTotal(MediaPart part, {int? videoQuality}) async =>
+      1000;
 
   @override
   Future<Result<String>> download(
     MediaPart part, {
     int? videoQuality,
-    bool audioOnly = false,
     bool coverOnly = false,
     bool saveCover = false,
     String? coverUrl,
-    String? cookie,
     String? downloadId,
     String? fileStem,
     CancelToken? cancelToken,

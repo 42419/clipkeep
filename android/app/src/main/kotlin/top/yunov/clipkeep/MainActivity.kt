@@ -8,10 +8,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
-import android.media.MediaCodec
-import android.media.MediaExtractor
-import android.media.MediaFormat
-import android.media.MediaMuxer
 import android.media.MediaScannerConnection
 import android.net.ConnectivityManager
 import android.net.Network
@@ -30,7 +26,6 @@ import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
-import java.nio.ByteBuffer
 import java.util.concurrent.Executors
 
 class MainActivity : FlutterActivity() {
@@ -64,7 +59,6 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "saveFile" -> saveFile(call, result)
-                    "extractAudio" -> extractAudio(call, result)
                     "convertToJpeg" -> convertToJpeg(call, result)
                     "openMedia" -> openMedia(call, result)
                     "shareMedia" -> shareMedia(call, result)
@@ -290,82 +284,6 @@ class MainActivity : FlutterActivity() {
                 }
         } catch (e: Exception) {
             null
-        }
-    }
-
-    /// 从 MP4 复制音轨到 M4A（无损，不转码）；用于抖音「仅音频」。
-    private fun extractAudio(call: MethodCall, result: MethodChannel.Result) {
-        val input = call.argument<String>("input")
-        val output = call.argument<String>("output")
-        if (input == null || output == null) {
-            result.error("bad_args", "input/output required", null)
-            return
-        }
-        saveExecutor.execute {
-            try {
-                val outFile = File(output)
-                if (outFile.exists()) {
-                    outFile.delete()
-                }
-                extractAudioTrack(input, output)
-                runOnUiThread { result.success(true) }
-            } catch (e: Exception) {
-                runOnUiThread {
-                    result.error("extract_failed", e.message ?: "提取音频失败", null)
-                }
-            }
-        }
-    }
-
-    private fun extractAudioTrack(input: String, output: String) {
-        val extractor = MediaExtractor()
-        var muxer: MediaMuxer? = null
-        try {
-            extractor.setDataSource(input)
-            var trackIndex = -1
-            var audioFormat: MediaFormat? = null
-            for (i in 0 until extractor.trackCount) {
-                val format = extractor.getTrackFormat(i)
-                val mime = format.getString(MediaFormat.KEY_MIME) ?: continue
-                if (mime.startsWith("audio/")) {
-                    trackIndex = i
-                    audioFormat = format
-                    break
-                }
-            }
-            if (trackIndex < 0 || audioFormat == null) {
-                throw IllegalStateException("视频没有音轨")
-            }
-            extractor.selectTrack(trackIndex)
-            val mux = MediaMuxer(output, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-            muxer = mux
-            val outTrack = mux.addTrack(audioFormat)
-            mux.start()
-            val maxSize = if (audioFormat.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
-                audioFormat.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE)
-            } else {
-                1024 * 1024
-            }
-            val buffer = ByteBuffer.allocateDirect(maxSize.coerceAtLeast(64 * 1024))
-            val info = MediaCodec.BufferInfo()
-            while (true) {
-                val size = extractor.readSampleData(buffer, 0)
-                if (size < 0) {
-                    break
-                }
-                info.offset = 0
-                info.size = size
-                info.presentationTimeUs = extractor.sampleTime
-                info.flags = extractor.sampleFlags
-                mux.writeSampleData(outTrack, buffer, info)
-                extractor.advance()
-            }
-            mux.stop()
-        } finally {
-            try {
-                muxer?.release()
-            } catch (_: Exception) {}
-            extractor.release()
         }
     }
 

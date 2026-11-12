@@ -200,15 +200,8 @@ class DownloaderApi {
   Future<void> cleanupOrphans(Set<String> keepIds) =>
       _media.cleanupOrphans(keepIds);
 
-  Future<int?> probeSelectionTotal(
-    MediaPart part, {
-    int? videoQuality,
-    bool audioOnly = false,
-  }) => _media.probeSelectionTotal(
-    part,
-    videoQuality: videoQuality,
-    audioOnly: audioOnly,
-  );
+  Future<int?> probeSelectionTotal(MediaPart part, {int? videoQuality}) =>
+      _media.probeSelectionTotal(part, videoQuality: videoQuality);
 
   Future<Result<String>> saveImages(
     List<MediaImage> images, {
@@ -262,7 +255,6 @@ class DownloaderApi {
   Future<Result<String>> download(
     MediaPart part, {
     int? videoQuality,
-    bool audioOnly = false,
     bool coverOnly = false,
     bool saveCover = false,
     String? coverUrl,
@@ -275,7 +267,6 @@ class DownloaderApi {
     return _media.download(
       part,
       videoQuality: videoQuality,
-      audioOnly: audioOnly,
       coverOnly: coverOnly,
       saveCover: saveCover,
       coverUrl: coverUrl,

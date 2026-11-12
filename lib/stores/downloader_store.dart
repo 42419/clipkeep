@@ -121,7 +121,6 @@ class DownloaderStore extends ChangeNotifier {
     String platform = '抖音',
     required String qualityLabel,
     int? videoQuality,
-    bool audioOnly = false,
     bool coverOnly = false,
     bool saveCover = false,
     String? coverUrl,
@@ -148,7 +147,6 @@ class DownloaderStore extends ChangeNotifier {
       part: part,
       createdAt: DateTime.now(),
       videoQuality: videoQuality,
-      audioOnly: audioOnly,
       coverOnly: coverOnly,
       saveCover: saveCover,
       coverUrl: coverUrl,
@@ -275,23 +273,14 @@ class DownloaderStore extends ChangeNotifier {
       return null;
     }
     int? need;
-    if (task.audioOnly) {
-      final MediaStream? audio = part.pickAudio();
-      final MediaStream? video = audio == null
-          ? part.pickSmallestVideo()
-          : null;
-      need = audio?.sizeBytes ?? video?.sizeBytes;
-    } else {
-      final MediaStream? video = part.pickVideoQuality(task.videoQuality);
-      final int? videoBytes = video?.sizeBytes;
-      if (videoBytes != null) {
-        need = videoBytes + (part.pickAudio()?.sizeBytes ?? 0);
-      }
+    final MediaStream? video = part.pickVideoQuality(task.videoQuality);
+    final int? videoBytes = video?.sizeBytes;
+    if (videoBytes != null) {
+      need = videoBytes + (part.pickAudio()?.sizeBytes ?? 0);
     }
     need ??= await _api.probeSelectionTotal(
       part,
       videoQuality: task.videoQuality,
-      audioOnly: task.audioOnly,
     );
     if (need == null || need <= 0) {
       return null;
@@ -380,7 +369,7 @@ class DownloaderStore extends ChangeNotifier {
         task.part = part;
       } else {
         task.status = DownloadStatus.failed;
-        task.error = '获取该分 P 的下载地址失败';
+        task.error = '获取该作品的下载地址失败';
         _maybeScheduleAutoRetry(task, task.error!);
         unawaited(_persistCompleted());
         notifyListeners();
@@ -407,7 +396,6 @@ class DownloaderStore extends ChangeNotifier {
     final Result<String> result = await _api.download(
       part,
       videoQuality: task.videoQuality,
-      audioOnly: task.audioOnly,
       coverOnly: task.coverOnly,
       saveCover: task.saveCover,
       coverUrl: task.coverUrl,
@@ -639,7 +627,6 @@ class DownloaderStore extends ChangeNotifier {
           oldPart.sameDownloadSelection(
             task.part!,
             videoQuality: task.videoQuality,
-            audioOnly: task.audioOnly,
           );
       // 流身份相同还不够：旧任务已知总长度时，再探测一次新流总长度。
       if (resumable &&
@@ -649,7 +636,6 @@ class DownloaderStore extends ChangeNotifier {
         final int? newTotal = await _api.probeSelectionTotal(
           task.part!,
           videoQuality: task.videoQuality,
-          audioOnly: task.audioOnly,
         );
         if (newTotal == null || newTotal != task.totalBytes) {
           resumable = false;
@@ -736,6 +722,10 @@ class DownloaderStore extends ChangeNotifier {
               platform.toLowerCase().contains('douyin') ||
               sourceUrl.toLowerCase().contains('douyin');
           if ((platform.isNotEmpty || sourceUrl.isNotEmpty) && !isDouyin) {
+            continue;
+          }
+          // 「仅音频」已移除，历史里这类任务不再加载。
+          if (record['audioOnly'] == true) {
             continue;
           }
           final DownloadTask task = DownloadTask.fromRecord(record);
