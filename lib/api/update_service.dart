@@ -11,6 +11,7 @@ class UpdateApk {
     required this.asset,
     required this.size,
     required this.sha256,
+    this.versionCode = 0,
     this.url,
     this.urls = const <String>[],
   });
@@ -23,6 +24,12 @@ class UpdateApk {
 
   /// 小写十六进制 SHA-256，下载后校验。
   final String sha256;
+
+  /// 该 APK 的实际 versionCode。
+  ///
+  /// ABI split 会让每个架构的 APK 带不同偏移（arm64 为基准 +2000），与
+  /// pubspec 的基准值不同；旧清单没有该字段时为 0。
+  final int versionCode;
 
   /// 单一直链；兼容旧清单。
   final String? url;
@@ -62,6 +69,7 @@ class UpdateApk {
       asset: (json['asset'] ?? '').toString(),
       size: (json['size'] as num?)?.toInt() ?? 0,
       sha256: (json['sha256'] ?? '').toString().toLowerCase(),
+      versionCode: (json['versionCode'] as num?)?.toInt() ?? 0,
       url: json['url']?.toString(),
       urls: parsedUrls,
     );
@@ -80,6 +88,7 @@ class UpdateApk {
       asset: asset,
       size: size,
       sha256: sha256,
+      versionCode: versionCode,
       url: unique.isEmpty ? null : unique.first,
       urls: unique,
     );

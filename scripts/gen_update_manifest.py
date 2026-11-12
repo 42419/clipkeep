@@ -11,10 +11,14 @@ APK 的 size / sha256 现算，release 由 CI 传入当时的 tag。
 from __future__ import annotations
 
 import argparse
+import glob
 import hashlib
 import json
+import os
 import pathlib
 import re
+import shutil
+import subprocess
 import sys
 
 # ABI -> Release 资产名（与 android.yml 的上传列表保持一致）
@@ -31,6 +35,42 @@ def sha256_of(path: pathlib.Path) -> str:
         for chunk in iter(lambda: handle.read(1 << 20), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def find_aapt2() -> str | None:
+    """定位 aapt2：优先 Android SDK 的 build-tools，其次 PATH。"""
+    for key in ("ANDROID_HOME", "ANDROID_SDK_ROOT"):
+        root = os.environ.get(key)
+        if not root:
+            continue
+        candidates = sorted(
+            glob.glob(os.path.join(root, "build-tools", "*", "aapt2*")),
+            reverse=True,
+        )
+        for candidate in candidates:
+            if os.path.isfile(candidate):
+                return candidate
+    return shutil.which("aapt2")
+
+
+def read_apk_version_code(aapt2: str, path: pathlib.Path) -> int | None:
+    """读 APK 里真实的 versionCode。
+
+    `--split-per-abi` 会让每个架构的 APK 带上不同的 versionCode 偏移
+    （armeabi-v7a 1009 / arm64-v8a 2009 / x86_64 4009），与 pubspec 的
+    基准值 9 并不相同；清单必须记录真实值，否则 App 里两个数字对不上。
+    """
+    try:
+        result = subprocess.run(
+            [aapt2, "dump", "badging", str(path)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    match = re.search(r"versionCode='(\d+)'", result.stdout)
+    return int(match.group(1)) if match else None
 
 
 def read_version(pubspec: pathlib.Path) -> tuple[str, int]:
@@ -95,6 +135,9 @@ def main() -> None:
     published_at = read_published_at(pathlib.Path(args.changelog), version_name)
 
     apk_dir = pathlib.Path(args.apk_dir)
+    aapt2 = find_aapt2()
+    if aapt2 is None:
+        print("警告：找不到 aapt2，update.json 将不记录各 ABI 的 versionCode")
     apks: dict[str, dict[str, object]] = {}
     for abi, asset_name in APKS.items():
         path = apk_dir / asset_name
@@ -105,10 +148,12 @@ def main() -> None:
             for base in args.asset_base_url
             if base.strip()
         ]
+        apk_version_code = read_apk_version_code(aapt2, path) if aapt2 else None
         apks[abi] = {
             "asset": asset_name,
             "size": path.stat().st_size,
             "sha256": sha256_of(path),
+            **({"versionCode": apk_version_code} if apk_version_code else {}),
             **({"urls": urls} if urls else {}),
         }
 
@@ -133,9 +178,11 @@ def main() -> None:
         print(f"生成 {args.notes_output}: {len(notes)} 字符")
 
     total = sum(int(item["size"]) for item in apks.values())
+    codes = "/".join(str(item.get("versionCode", "-")) for item in apks.values())
     print(
         f"生成 {output}: {version_name} ({version_code}) / {args.release_tag} / "
-        f"{len(apks)} 个 ABI / 共 {total / 1024 / 1024:.1f} MB"
+        f"{len(apks)} 个 ABI / versionCode {codes} / "
+        f"共 {total / 1024 / 1024:.1f} MB"
     )
 
 
