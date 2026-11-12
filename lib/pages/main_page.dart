@@ -11,10 +11,12 @@ import '../components/common/clipboard_link_sheet.dart';
 import '../stores/downloader_store.dart';
 import '../stores/main_tab_controller.dart';
 import '../stores/settings_store.dart';
+import '../stores/update_store.dart';
 import 'downloads/downloads_view.dart';
 import 'home/home_view.dart';
 import 'result_page.dart';
 import 'settings/settings_view.dart';
+import 'update/update_page.dart';
 
 /// 底部三页外壳：首页 / 下载 / 设置。同时在进入/回到前台时检测剪贴板。
 class MainPage extends StatefulWidget {
@@ -34,6 +36,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   bool _prefsLoaded = false;
   final PageController _pageController = PageController();
   MainTabController? _tabs;
+  UpdateStore? _updates;
 
   @override
   void initState() {
@@ -47,6 +50,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
         await _checkClipboard();
       }
     });
+    _scheduleUpdateCheck();
   }
 
   @override
@@ -56,6 +60,11 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
     if (!identical(_tabs, tabs)) {
       _tabs?.removeListener(_onTabChanged);
       _tabs = tabs..addListener(_onTabChanged);
+    }
+    final UpdateStore updates = context.read<UpdateStore>();
+    if (!identical(_updates, updates)) {
+      _updates?.removeListener(_onUpdateChanged);
+      _updates = updates..addListener(_onUpdateChanged);
     }
   }
 
@@ -72,9 +81,53 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
     );
   }
 
+  /// 首帧后延迟检查更新，避开首页首屏与剪贴板检测。
+  void _scheduleUpdateCheck() {
+    unawaited(
+      Future<void>.delayed(const Duration(milliseconds: 2500), () {
+        final UpdateStore? updates = _updates;
+        if (!mounted || updates == null) {
+          return;
+        }
+        unawaited(updates.checkIfDue());
+      }),
+    );
+  }
+
+  /// 有新版本时提示一次；同一版本由 Store 去重。
+  void _onUpdateChanged() {
+    final UpdateStore? updates = _updates;
+    if (!mounted || updates == null) {
+      return;
+    }
+    final String? version = updates.pendingPrompt;
+    if (version == null) {
+      return;
+    }
+    unawaited(updates.markPrompted());
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    messenger.clearSnackBars();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('发现新版本 $version'),
+        action: SnackBarAction(
+          label: '查看',
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (BuildContext context) => const UpdatePage(),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _tabs?.removeListener(_onTabChanged);
+    _updates?.removeListener(_onUpdateChanged);
     _pageController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -84,6 +137,10 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(_checkClipboardAfterResume());
+      final UpdateStore? updates = _updates;
+      if (updates != null) {
+        unawaited(updates.checkIfDue());
+      }
     }
   }
 
@@ -208,6 +265,7 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final MainTabController tab = context.watch<MainTabController>();
+    final UpdateStore updates = context.watch<UpdateStore>();
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (bool didPop, Object? result) {
@@ -236,22 +294,28 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
           // 必须用 viewPadding 才能把图标抬到手势条上方。
           maintainBottomViewPadding: true,
           onDestinationSelected: tab.select,
-          destinations: const <NavigationDestination>[
-            NavigationDestination(
+          destinations: <NavigationDestination>[
+            const NavigationDestination(
               icon: Icon(Icons.home_outlined),
               selectedIcon: Icon(Icons.home_rounded),
               label: '首页',
               tooltip: '首页',
             ),
-            NavigationDestination(
+            const NavigationDestination(
               icon: Icon(Icons.download_outlined),
               selectedIcon: Icon(Icons.download_rounded),
               label: '下载',
               tooltip: '下载',
             ),
             NavigationDestination(
-              icon: Icon(Icons.settings_outlined),
-              selectedIcon: Icon(Icons.settings_rounded),
+              icon: Badge(
+                isLabelVisible: updates.shouldNotify,
+                child: const Icon(Icons.settings_outlined),
+              ),
+              selectedIcon: Badge(
+                isLabelVisible: updates.shouldNotify,
+                child: const Icon(Icons.settings_rounded),
+              ),
               label: '设置',
               tooltip: '设置',
             ),

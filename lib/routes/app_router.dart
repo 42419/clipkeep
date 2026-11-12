@@ -8,17 +8,20 @@ import '../pages/main_page.dart';
 import '../stores/downloader_store.dart';
 import '../stores/main_tab_controller.dart';
 import '../stores/settings_store.dart';
+import '../stores/update_store.dart';
 import '../theme/app_theme.dart';
 import '../theme/dynamic_color_host.dart';
 
 /// 应用根 Widget：注入 Provider + Material 3 主题 + 命名路由。
-Widget getRootWidget({SettingsStore? settingsStore}) {
+Widget getRootWidget({SettingsStore? settingsStore, UpdateStore? updateStore}) {
   // 直接持有实例，避免 DownloaderStore 的闭包通过 context 跨 Provider 查找
   // SettingsStore（后者不是它的祖先，会抛 ProviderNotFoundException）。
   final SettingsStore store = settingsStore ?? (SettingsStore()..load());
+  final UpdateStore updates = updateStore ?? UpdateStore();
   return MultiProvider(
     providers: [
       ChangeNotifierProvider<SettingsStore>.value(value: store),
+      ChangeNotifierProvider<UpdateStore>.value(value: updates),
       ChangeNotifierProvider<DownloaderStore>(
         create: (_) => DownloaderStore(
           DownloaderApi(

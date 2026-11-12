@@ -26,6 +26,18 @@ class AppConstants {
   /// 设置项：DTK 服务器地址（运行期可覆盖）。
   static const String prefDtkBaseUrl = 'settings_dtk_base_url';
 
+  /// 上次成功检查更新的时间（epoch 毫秒）。
+  static const String prefUpdateLastCheck = 'update_last_check';
+
+  /// 已经弹过提示的版本名，避免同一版本反复打扰。
+  static const String prefUpdatePromptedVersion = 'update_prompted_version';
+
+  /// 最近一次检查发现的最新版本名，供重启后继续显示红点。
+  static const String prefUpdateLatestVersion = 'update_latest_version';
+
+  /// 用户主动忽略的版本名，忽略后不再显示红点与提示。
+  static const String prefUpdateIgnoredVersion = 'update_ignored_version';
+
   /// 安全存储键：DTK API Key。
   static const String secureDtkApiKey = 'settings_dtk_api_key';
 

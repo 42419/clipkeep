@@ -7,13 +7,16 @@ import 'package:dio/dio.dart';
 import 'package:flutter/services.dart'
     show MethodChannel, MissingPluginException, PlatformException;
 import 'package:material_ui/material_ui.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:provider/provider.dart';
 
 import '../../api/changelog.dart';
 import '../../api/changelog_service.dart';
 import '../../api/update_service.dart';
+import '../../stores/update_store.dart';
+import '../../theme/app_theme.dart';
 import '../../utils/result.dart';
+import 'changelog_page.dart';
 
 /// 检查更新：展示版本差异与更新说明，下载并调起系统安装。
 class UpdatePage extends StatefulWidget {
@@ -27,25 +30,23 @@ class _UpdatePageState extends State<UpdatePage> {
   static const MethodChannel _installer = MethodChannel(
     'clipkeep/apk_installer',
   );
-  final UpdateService _service = UpdateService();
   final Dio _dio = Dio();
 
-  bool _loading = true;
-  String? _error;
-  UpdateInfo? _info;
-  String _currentVersion = '';
-  int _currentCode = 0;
   ChangelogEntry? _notes;
 
   bool _downloading = false;
   double _progress = 0;
   int _received = 0;
   int _total = 0;
-  DateTime? _lastCheckedAt;
 
-  /// 是否存在比本机更新的版本（先比 versionName，再比 versionCode）。
-  bool get _hasUpdate =>
-      _info != null && _info!.isNewerThan(_currentVersion, _currentCode);
+  /// 检查更新的状态由 Store 持有，页面只负责展示。
+  UpdateStore get _store => context.read<UpdateStore>();
+  UpdateInfo? get _info => _store.latest;
+  bool get _loading => _store.checking;
+  String? get _error => _store.error;
+  String get _currentVersion => _store.currentVersion;
+  DateTime? get _lastCheckedAt => _store.lastCheckedAt;
+  bool get _hasUpdate => _store.hasUpdate;
 
   @override
   void initState() {
@@ -54,43 +55,13 @@ class _UpdatePageState extends State<UpdatePage> {
   }
 
   Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      final PackageInfo pkg = await PackageInfo.fromPlatform();
-      _currentVersion = pkg.version;
-      _currentCode = int.tryParse(pkg.buildNumber) ?? 0;
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _error = '无法读取当前版本，请重试';
-          _lastCheckedAt = DateTime.now();
-        });
-      }
-      return;
-    }
-    final Result<UpdateInfo> result = await _service.check();
+    final UpdateStore store = _store;
+    await store.check();
     if (!mounted) {
       return;
     }
-    if (result is Err<UpdateInfo>) {
-      setState(() {
-        _loading = false;
-        _error = result.error.message;
-        _lastCheckedAt = DateTime.now();
-      });
-      return;
-    }
-    final UpdateInfo info = (result as Ok<UpdateInfo>).value;
-    setState(() {
-      _info = info;
-      _loading = false;
-      _lastCheckedAt = DateTime.now();
-    });
-    if (info.isNewerThan(_currentVersion, _currentCode) && _notes == null) {
+    final UpdateInfo? info = store.latest;
+    if (store.hasUpdate && info != null && _notes == null) {
       unawaited(_loadNotes(info.versionName));
     }
   }
@@ -246,6 +217,8 @@ class _UpdatePageState extends State<UpdatePage> {
 
   @override
   Widget build(BuildContext context) {
+    // 订阅 Store：检查中/结果/忽略状态变化时重建页面。
+    context.watch<UpdateStore>();
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
     return Scaffold(
@@ -264,7 +237,9 @@ class _UpdatePageState extends State<UpdatePage> {
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
             children: <Widget>[
-              _buildStatusCard(theme, scheme),
+              _buildHero(theme, scheme),
+              const SizedBox(height: 16),
+              _buildVersionGrid(theme, scheme),
               if (_hasUpdate) ...<Widget>[
                 if (_notes != null) ...<Widget>[
                   const SizedBox(height: 16),
@@ -272,7 +247,11 @@ class _UpdatePageState extends State<UpdatePage> {
                 ],
                 const SizedBox(height: 16),
                 _buildDownloadCard(theme, scheme, _info!),
+                const SizedBox(height: 4),
+                _buildIgnoreRow(theme, scheme),
               ],
+              const SizedBox(height: 16),
+              _buildAbout(theme, scheme),
             ],
           ),
         ),
@@ -280,118 +259,241 @@ class _UpdatePageState extends State<UpdatePage> {
     );
   }
 
-  Widget _buildStatusCard(ThemeData theme, ColorScheme scheme) {
+  Widget _buildHero(ThemeData theme, ColorScheme scheme) {
     final bool hasUpdate = _hasUpdate;
+    final bool failed = _error != null;
+    final Color background = failed
+        ? scheme.errorContainer
+        : hasUpdate
+        ? scheme.primaryContainer
+        : scheme.surfaceContainerLow;
+    final Color foreground = failed
+        ? scheme.onErrorContainer
+        : hasUpdate
+        ? scheme.onPrimaryContainer
+        : scheme.onSurface;
+    final Color iconBackground = failed
+        ? scheme.error
+        : hasUpdate
+        ? scheme.primary
+        : scheme.surfaceContainerHighest;
+    final Color iconForeground = failed
+        ? scheme.onError
+        : hasUpdate
+        ? scheme.onPrimary
+        : scheme.onSurfaceVariant;
+    final String title = _loading
+        ? '正在检查更新'
+        : failed
+        ? '检查失败'
+        : hasUpdate
+        ? '发现新版本 ${_info!.versionName}'
+        : '已是最新版本';
     final String subtitle = _loading
-        ? '正在检查…'
-        : _error ?? (hasUpdate ? '有新版本可以安装' : '当前已是最新');
+        ? '正在获取最新版本信息'
+        : failed
+        ? (_error ?? '请稍后重试')
+        : hasUpdate
+        ? '新版本已发布，安装后即可使用'
+        : '当前版本已是最新，无需更新';
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(28),
+        color: background,
+        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Icon(
-                hasUpdate ? Icons.system_update_alt : Icons.verified_outlined,
-                size: 28,
-                color: hasUpdate ? scheme.primary : scheme.onSurfaceVariant,
+              Material(
+                color: iconBackground,
+                shape: MaterialShapeBorder(shape: MaterialShapes.cookie12Sided),
+                clipBehavior: Clip.antiAlias,
+                child: SizedBox(
+                  width: 56,
+                  height: 56,
+                  child: Center(
+                    child: Icon(
+                      failed
+                          ? Icons.error_outline_rounded
+                          : hasUpdate
+                          ? Icons.system_update_alt_rounded
+                          : Icons.verified_rounded,
+                      color: iconForeground,
+                      size: 26,
+                    ),
+                  ),
+                ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 16),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Text(
-                      hasUpdate ? '发现新版本 ${_info!.versionName}' : '已是最新版本',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
                     const SizedBox(height: 2),
                     Text(
+                      title,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: foreground,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
                       subtitle,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: _error == null
-                            ? scheme.onSurfaceVariant
-                            : scheme.error,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: foreground.withValues(alpha: 0.75),
+                        height: 1.4,
                       ),
                     ),
                   ],
                 ),
               ),
               if (_loading)
-                const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2.5),
+                Padding(
+                  padding: const EdgeInsets.only(left: 8, top: 4),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: foreground,
+                    ),
+                  ),
                 ),
             ],
           ),
           const SizedBox(height: 12),
-          _infoRow(
-            theme,
-            scheme,
-            '当前版本',
-            _versionText(_currentVersion, _currentCode),
-          ),
-          if (_info != null)
-            _infoRow(
-              theme,
-              scheme,
-              '最新版本',
-              _versionText(_info!.versionName, _info!.versionCode),
-            ),
-          if (_info != null && _info!.publishedAt.isNotEmpty)
-            _infoRow(theme, scheme, '发布日期', _info!.publishedAt),
-          if (_lastCheckedAt != null)
-            _infoRow(theme, scheme, '上次检查', _timeText(_lastCheckedAt!)),
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerRight,
-            child: Tooltip(
-              message: '重新检查更新',
-              child: TextButton.icon(
-                onPressed: _loading ? null : _load,
-                style: TextButton.styleFrom(
-                  minimumSize: const Size(64, 40),
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+          Row(
+            children: <Widget>[
+              Text(
+                _lastCheckedAt == null
+                    ? '尚未检查'
+                    : '上次检查 ${_timeText(_lastCheckedAt!)}',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: foreground.withValues(alpha: 0.7),
+                  fontFeatures: const <FontFeature>[
+                    FontFeature.tabularFigures(),
+                  ],
                 ),
-                icon: const Icon(Icons.refresh, size: 18),
-                label: const Text('重新检查'),
               ),
-            ),
+              const Spacer(),
+              Tooltip(
+                message: '重新检查更新',
+                child: TextButton.icon(
+                  onPressed: _loading ? null : _load,
+                  style: TextButton.styleFrom(
+                    foregroundColor: foreground,
+                    minimumSize: const Size(64, 40),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                  ),
+                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                  label: const Text('重新检查'),
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _infoRow(
-    ThemeData theme,
-    ColorScheme scheme,
-    String label,
-    String value,
-  ) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
+  Widget _buildVersionGrid(ThemeData theme, ColorScheme scheme) {
+    final String latest = _info?.versionName ?? '—';
+    final String published = _info == null || _info!.publishedAt.isEmpty
+        ? '—'
+        : _info!.publishedAt;
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
         children: <Widget>[
-          Text(
-            label,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: scheme.onSurfaceVariant,
-            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Expanded(
+                child: _versionCell(
+                  theme,
+                  scheme,
+                  icon: Icons.smartphone_rounded,
+                  label: '当前版本',
+                  version: _currentVersion.isEmpty ? '—' : _currentVersion,
+                ),
+              ),
+              Expanded(
+                child: _versionCell(
+                  theme,
+                  scheme,
+                  icon: Icons.cloud_outlined,
+                  label: '最新版本',
+                  version: latest,
+                ),
+              ),
+            ],
           ),
-          const Spacer(),
+          Divider(
+            height: 1,
+            thickness: 1,
+            indent: 16,
+            endIndent: 16,
+            color: scheme.outlineVariant,
+          ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Expanded(child: _metaCell(theme, scheme, '发布日期', published)),
+              Expanded(
+                child: _metaCell(
+                  theme,
+                  scheme,
+                  '上次检查',
+                  _lastCheckedAt == null ? '—' : _timeText(_lastCheckedAt!),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _versionCell(
+    ThemeData theme,
+    ColorScheme scheme, {
+    required IconData icon,
+    required String label,
+    required String version,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 12, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(icon, size: 14, color: scheme.onSurfaceVariant),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
           Text(
-            value,
-            style: theme.textTheme.bodySmall?.copyWith(
+            version,
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w700,
               fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
             ),
           ),
@@ -400,8 +502,130 @@ class _UpdatePageState extends State<UpdatePage> {
     );
   }
 
-  String _versionText(String name, int code) =>
-      code > 0 ? '$name ($code)' : name;
+  Widget _metaCell(
+    ThemeData theme,
+    ColorScheme scheme,
+    String label,
+    String value,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 12, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w500,
+              fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAbout(ThemeData theme, ColorScheme scheme) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: <Widget>[
+          _aboutRow(
+            theme,
+            scheme,
+            Icons.cloud_download_outlined,
+            '更新源',
+            'CNB 主源 · GitHub 备用',
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Divider(
+              height: 1,
+              thickness: 1,
+              color: scheme.outlineVariant,
+            ),
+          ),
+          _aboutRow(
+            theme,
+            scheme,
+            Icons.shield_outlined,
+            '安装包校验',
+            'SHA-256 校验后经系统安装器安装',
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Divider(
+              height: 1,
+              thickness: 1,
+              color: scheme.outlineVariant,
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Tooltip(
+              message: '查看完整更新日志',
+              child: TextButton.icon(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (BuildContext context) => const ChangelogPage(),
+                    ),
+                  );
+                },
+                style: TextButton.styleFrom(
+                  minimumSize: const Size(64, 52),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                ),
+                icon: const Icon(Icons.history_rounded, size: 18),
+                label: const Text('查看完整更新日志'),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _aboutRow(
+    ThemeData theme,
+    ColorScheme scheme,
+    IconData icon,
+    String label,
+    String value,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      child: Row(
+        children: <Widget>[
+          Icon(icon, size: 20, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 12),
+          Expanded(child: Text(label, style: theme.textTheme.bodyMedium)),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   String _timeText(DateTime time) {
     final String hh = time.hour.toString().padLeft(2, '0');
@@ -420,10 +644,10 @@ class _UpdatePageState extends State<UpdatePage> {
         : '${(apk.size / 1024 / 1024).toStringAsFixed(1)} MB';
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -485,6 +709,34 @@ class _UpdatePageState extends State<UpdatePage> {
     );
   }
 
+  /// 忽略/恢复当前版本：避免反复提醒，用户主动进页面仍能看到更新。
+  Widget _buildIgnoreRow(ThemeData theme, ColorScheme scheme) {
+    final UpdateStore store = _store;
+    final String? version = store.latestVersionName;
+    final bool ignored = version != null && store.ignoredVersion == version;
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Tooltip(
+        message: ignored ? '恢复该版本的更新提醒' : '不再提示这个版本',
+        child: TextButton(
+          onPressed: () {
+            if (ignored) {
+              unawaited(store.clearIgnored());
+            } else {
+              unawaited(store.ignoreCurrent());
+            }
+          },
+          style: TextButton.styleFrom(
+            minimumSize: const Size(64, 44),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            foregroundColor: scheme.onSurfaceVariant,
+          ),
+          child: Text(ignored ? '已忽略 $version · 恢复提醒' : '忽略此版本'),
+        ),
+      ),
+    );
+  }
+
   Widget _buildNotes(
     ThemeData theme,
     ColorScheme scheme,
@@ -492,10 +744,10 @@ class _UpdatePageState extends State<UpdatePage> {
   ) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

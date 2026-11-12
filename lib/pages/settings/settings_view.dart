@@ -10,6 +10,7 @@ import '../../components/common/confirm_dialog.dart';
 import '../../constants/app_constants.dart';
 import '../../stores/downloader_store.dart';
 import '../../stores/settings_store.dart';
+import '../../stores/update_store.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/format.dart';
 import '../../utils/result.dart';
@@ -25,6 +26,7 @@ class SettingsView extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
     final SettingsStore settings = context.watch<SettingsStore>();
+    final UpdateStore updates = context.watch<UpdateStore>();
     return Scaffold(
       backgroundColor: scheme.surface,
       body: SafeArea(
@@ -125,10 +127,24 @@ class SettingsView extends StatelessWidget {
                 _SettingsTile(
                   icon: Icons.system_update_alt_rounded,
                   headline: '检查更新',
-                  supportingText: '查看是否有新版本，下载后直接安装',
-                  trailing: Icon(
-                    Icons.chevron_right,
-                    color: scheme.onSurfaceVariant,
+                  supportingText: updates.shouldNotify
+                      ? '发现新版本 ${updates.latest!.versionName}'
+                      : '查看是否有新版本，下载后直接安装',
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      if (updates.shouldNotify)
+                        Container(
+                          width: 8,
+                          height: 8,
+                          margin: const EdgeInsets.only(right: 8),
+                          decoration: BoxDecoration(
+                            color: scheme.error,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
+                    ],
                   ),
                   onTap: () => _openUpdatePage(context),
                 ),
@@ -145,16 +161,6 @@ class SettingsView extends StatelessWidget {
                       builder: (BuildContext context) => const ChangelogPage(),
                     ),
                   ),
-                ),
-                _SettingsTile(
-                  icon: Icons.description_rounded,
-                  headline: '开源许可',
-                  supportingText: '第三方组件与来源声明',
-                  trailing: Icon(
-                    Icons.chevron_right,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                  onTap: () => _openLicenses(context),
                 ),
                 _versionItem(theme, scheme),
               ],
@@ -278,7 +284,7 @@ class SettingsView extends StatelessWidget {
           headline: '版本',
           supportingText: info == null
               ? '读取中…'
-              : '${info.version} (${info.buildNumber})',
+              : '${info.version} · build ${info.buildNumber}',
           trailing: Text(
             'Android',
             style: theme.textTheme.bodySmall?.copyWith(
@@ -449,26 +455,6 @@ class SettingsView extends StatelessWidget {
       MaterialPageRoute<void>(
         builder: (BuildContext context) => const UpdatePage(),
       ),
-    );
-  }
-
-  /// 直接进 Flutter 许可证页：第三方来源与所有 pub 依赖许可。
-  Future<void> _openLicenses(BuildContext context) async {
-    String version = '未读取到版本';
-    try {
-      final PackageInfo info = await PackageInfo.fromPlatform();
-      version = '${info.version} (${info.buildNumber})';
-    } catch (_) {
-      // 读取失败不伪造版本号。
-    }
-    if (!context.mounted) {
-      return;
-    }
-    showLicensePage(
-      context: context,
-      applicationName: 'ClipKeep',
-      applicationVersion: version,
-      applicationLegalese: 'https://github.com/42419/clipkeep',
     );
   }
 }

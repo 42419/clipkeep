@@ -9,6 +9,7 @@ import 'package:clipkeep/api/update_service.dart';
 import 'package:clipkeep/stores/downloader_store.dart';
 import 'package:clipkeep/stores/main_tab_controller.dart';
 import 'package:clipkeep/stores/settings_store.dart';
+import 'package:clipkeep/stores/update_store.dart';
 import 'package:clipkeep/utils/media_downloader.dart';
 import 'package:clipkeep/utils/media_naming.dart';
 import 'package:clipkeep/utils/result.dart';
@@ -18,6 +19,7 @@ import 'package:clipkeep/viewmodels/parsed_source.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -727,6 +729,7 @@ void main() {
           'asset': 'app-arm64-v8a-release.apk',
           'size': 1024,
           'sha256': 'AA',
+          'versionCode': 2009,
         },
         'x86_64': <String, dynamic>{
           'asset': 'app-x86_64-release.apk',
@@ -747,6 +750,8 @@ void main() {
       expect(info.isNewerThan('1.1.1', 2), isFalse);
       expect(info.apks['arm64-v8a']?.sha256, 'aa');
       expect(info.apks['arm64-v8a']?.size, 1024);
+      expect(info.apks['arm64-v8a']?.versionCode, 2009);
+      expect(info.apks['x86_64']?.versionCode, 0);
     });
 
     test('按设备 ABI 优先级匹配，缺失时回退 arm64', () {
@@ -811,6 +816,84 @@ void main() {
       ]);
     });
   });
+
+  group('自动检查更新', () {
+    setUp(() {
+      PackageInfo.setMockInitialValues(
+        appName: 'ClipKeep',
+        packageName: 'top.yunov.clipkeep',
+        version: '1.1.5',
+        buildNumber: '2009',
+        buildSignature: '',
+      );
+    });
+
+    test('有更新时提示，忽略后不再提醒', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final _FakeUpdateService service = _FakeUpdateService();
+      final UpdateStore store = UpdateStore(service: service);
+      await store.load();
+      await store.check();
+      expect(store.hasUpdate, isTrue);
+      expect(store.shouldNotify, isTrue);
+      expect(store.pendingPrompt, '1.1.6');
+      await store.markPrompted();
+      expect(store.pendingPrompt, isNull);
+      await store.ignoreCurrent();
+      expect(store.shouldNotify, isFalse);
+      expect(store.hasUpdate, isTrue);
+      await store.clearIgnored();
+      expect(store.shouldNotify, isTrue);
+    });
+
+    test('一天内不重复自动检查', () async {
+      final DateTime now = DateTime(2026, 11, 12, 15);
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'update_last_check': now
+            .subtract(const Duration(hours: 1))
+            .millisecondsSinceEpoch,
+      });
+      final _FakeUpdateService service = _FakeUpdateService();
+      final UpdateStore store = UpdateStore(service: service, clock: () => now);
+      await store.checkIfDue();
+      expect(service.calls, 0);
+      await store.check();
+      expect(service.calls, 1);
+    });
+    test('重启后按缓存版本名继续提示', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'update_latest_version': '1.1.6',
+        'update_last_check': DateTime(2026, 11, 12, 14).millisecondsSinceEpoch,
+      });
+      final _FakeUpdateService service = _FakeUpdateService();
+      final UpdateStore store = UpdateStore(
+        service: service,
+        clock: () => DateTime(2026, 11, 12, 15),
+      );
+      await store.checkIfDue();
+      expect(service.calls, 0);
+      expect(store.hasUpdate, isTrue);
+      expect(store.shouldNotify, isTrue);
+    });
+  });
+}
+
+class _FakeUpdateService extends UpdateService {
+  int calls = 0;
+
+  @override
+  Future<Result<UpdateInfo>> check() async {
+    calls += 1;
+    return const Ok<UpdateInfo>(
+      UpdateInfo(
+        versionName: '1.1.6',
+        versionCode: 10,
+        publishedAt: '2026-11-13',
+        release: 'v1.1.6',
+        apks: <String, UpdateApk>{},
+      ),
+    );
+  }
 }
 
 class _RangeAdapter implements HttpClientAdapter {
