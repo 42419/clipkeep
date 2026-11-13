@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:dynamic_color/dynamic_color.dart';
-import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 /// 把设备动态取色（Material You）解析成一组明暗 [ColorScheme]。
@@ -85,12 +84,12 @@ class _DynamicColorHostState extends State<DynamicColorHost>
       if (palette != null) {
         return palette.toColorScheme().primary;
       }
-    } on PlatformException {
-      // 设备不提供核心调色板，继续尝试强调色。
+    } catch (_) {
+      // 设备不提供核心调色板（web 上是 MissingPluginException），继续尝试强调色。
     }
     try {
       return await DynamicColorPlugin.getAccentColor();
-    } on PlatformException {
+    } catch (_) {
       return null;
     }
   }

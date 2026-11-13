@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ffi' show Abi;
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
@@ -13,6 +12,7 @@ import 'package:provider/provider.dart';
 import '../../api/changelog.dart';
 import '../../api/changelog_service.dart';
 import '../../api/update_service.dart';
+import '../../platform/abi_names.dart';
 import '../../stores/update_store.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/result.dart';
@@ -78,27 +78,12 @@ class _UpdatePageState extends State<UpdatePage> {
     }
   }
 
-  /// 当前设备的 ABI 优先级（与 build.gradle 的 abiFilters 对齐）。
-  List<String> _abiNames() {
-    final Abi abi = Abi.current();
-    if (abi == Abi.androidArm64) {
-      return <String>['arm64-v8a'];
-    }
-    if (abi == Abi.androidArm) {
-      return <String>['armeabi-v7a', 'arm64-v8a'];
-    }
-    if (abi == Abi.androidX64) {
-      return <String>['x86_64'];
-    }
-    return <String>['arm64-v8a'];
-  }
-
   Future<void> _downloadAndInstall() async {
     final UpdateInfo? info = _info;
     if (info == null || _downloading) {
       return;
     }
-    final UpdateApk? apk = info.apkFor(_abiNames());
+    final UpdateApk? apk = info.apkFor(abiNames());
     final List<String> urls = apk?.downloadUrls ?? const <String>[];
     if (apk == null || urls.isEmpty) {
       _showSnack('这个版本没有适配当前设备的安装包');
@@ -638,7 +623,7 @@ class _UpdatePageState extends State<UpdatePage> {
     ColorScheme scheme,
     UpdateInfo info,
   ) {
-    final UpdateApk? apk = info.apkFor(_abiNames());
+    final UpdateApk? apk = info.apkFor(abiNames());
     final String sizeText = apk == null || apk.size <= 0
         ? ''
         : '${(apk.size / 1024 / 1024).toStringAsFixed(1)} MB';
@@ -662,7 +647,8 @@ class _UpdatePageState extends State<UpdatePage> {
           Text(
             <String>[
               if (sizeText.isNotEmpty) sizeText,
-              _abiNames().first,
+              // web 上 abiNames() 恒为空，给个兜底文案。
+              abiNames().isEmpty ? '未知架构' : abiNames().first,
             ].join(' · '),
             style: theme.textTheme.bodySmall?.copyWith(
               color: scheme.onSurfaceVariant,
