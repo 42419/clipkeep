@@ -161,6 +161,30 @@ class DownloaderStore extends ChangeNotifier {
     return task;
   }
 
+  /// web 专用：不建任务、不入队、不持久化，算好文件名后直接把链接交给浏览器。
+  Future<Result<String>> downloadToBrowser(
+    MediaPart part, {
+    int? videoQuality,
+    bool coverOnly = false,
+  }) {
+    final MediaStream? stream = part.pickVideoQuality(videoQuality);
+    final String stem = buildVideoStem(
+      title: source?.title ?? part.title,
+      author: source?.author,
+      publishedAt: source?.publishDate,
+      contentId: contentIdOf(part.id),
+      resolution: coverOnly ? null : stream?.displayLabel,
+      fps: stream?.fps,
+    );
+    return _api.download(
+      part,
+      videoQuality: videoQuality,
+      coverOnly: coverOnly,
+      coverUrl: source?.coverUrl,
+      fileStem: stem,
+    );
+  }
+
   /// 保存图文/图集：直接落盘，完成后写入一条已完成记录。
   Future<Result<String>> saveImages(
     ParsedSource source, {
@@ -700,6 +724,10 @@ class DownloaderStore extends ChangeNotifier {
   }
 
   Future<void> _loadHistory() async {
+    // web 上不落盘，历史记录里的文件点不开，干脆不恢复。
+    if (kIsWeb) {
+      return;
+    }
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       final String? raw =

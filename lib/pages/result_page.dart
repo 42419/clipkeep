@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
@@ -1405,6 +1406,26 @@ class _ResultPageState extends State<ResultPage> {
         : _videoWithCover
         ? '$qualityText + 封面'
         : qualityText;
+    // web 版没有队列：算好文件名直接把链接交给浏览器，不留任务记录。
+    if (kIsWeb) {
+      final Result<String> result = await store.downloadToBrowser(
+        part,
+        videoQuality: _coverOnly ? null : quality,
+        coverOnly: _coverOnly,
+      );
+      messenger.clearSnackBars();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            result is Ok<String>
+                ? '已交给浏览器下载'
+                : (result as Err<String>).error.message,
+          ),
+        ),
+      );
+      return;
+    }
+
     final DownloadTask task = store.startDownload(
       part,
       title: store.source?.title ?? part.title,
