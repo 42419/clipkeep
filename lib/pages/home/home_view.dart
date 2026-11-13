@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
@@ -138,27 +139,29 @@ class _HomeViewState extends State<HomeView> {
               ],
             ),
           ),
-          Material(
-            color: scheme.tertiaryContainer,
-            shape: MaterialShapeBorder(shape: MaterialShapes.cookie12Sided),
-            clipBehavior: Clip.antiAlias,
-            child: IconButton(
-              tooltip: '实况图合成',
-              icon: Icon(
-                Icons.auto_awesome_motion_outlined,
-                size: 22,
-                color: scheme.onTertiaryContainer,
+          // 实况图合成依赖 Android 原生 Bitmap 与相册写入，web 上不提供入口。
+          if (!kIsWeb)
+            Material(
+              color: scheme.tertiaryContainer,
+              shape: MaterialShapeBorder(shape: MaterialShapes.cookie12Sided),
+              clipBehavior: Clip.antiAlias,
+              child: IconButton(
+                tooltip: '实况图合成',
+                icon: Icon(
+                  Icons.auto_awesome_motion_outlined,
+                  size: 22,
+                  color: scheme.onTertiaryContainer,
+                ),
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (BuildContext context) =>
+                          const MotionComposePage(),
+                    ),
+                  );
+                },
               ),
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (BuildContext context) =>
-                        const MotionComposePage(),
-                  ),
-                );
-              },
             ),
-          ),
         ],
       ),
     );
@@ -248,6 +251,10 @@ class _HomeViewState extends State<HomeView> {
     ColorScheme scheme,
     DownloaderStore store,
   ) {
+    // web 版没有下载队列，这里永远是空的，整块不渲染。
+    if (kIsWeb) {
+      return const SizedBox.shrink();
+    }
     final tasks = store.completedTasks.take(3).toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

@@ -127,6 +127,10 @@ class UpdateStore extends ChangeNotifier {
 
   /// 启动或回前台时调用：只在到期时请求。
   Future<void> checkIfDue() async {
+    // web 上没有 APK 更新的概念：不请求清单、不亮红点、不弹提示。
+    if (kIsWeb) {
+      return;
+    }
     await load();
     if (_currentVersion.isEmpty) {
       return;

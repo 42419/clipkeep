@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -44,110 +45,127 @@ class SettingsView extends StatelessWidget {
             const SizedBox(height: 10),
             _douyinCard(theme, scheme),
             const SizedBox(height: 24),
-            _sectionLabel(theme, scheme, '下载'),
-            const SizedBox(height: 10),
-            _SettingsGroup(
-              children: <Widget>[
-                _SettingsTile(
-                  icon: Icons.folder_rounded,
-                  headline: '保存位置',
-                  supportingText: settings.saveToGallery
-                      ? '相册 · ${AppConstants.albumName}'
-                      : '系统下载目录 · Download/ClipKeep',
-                  trailing: Icon(
-                    Icons.chevron_right,
-                    color: scheme.onSurfaceVariant,
+            // web 版没有本地下载、相册写入和磁盘缓存，整组隐藏。
+            if (!kIsWeb) ...[
+              _sectionLabel(theme, scheme, '下载'),
+              const SizedBox(height: 10),
+              _SettingsGroup(
+                children: <Widget>[
+                  _SettingsTile(
+                    icon: Icons.folder_rounded,
+                    headline: '保存位置',
+                    supportingText: settings.saveToGallery
+                        ? '相册 · ${AppConstants.albumName}'
+                        : '系统下载目录 · Download/ClipKeep',
+                    trailing: Icon(
+                      Icons.chevron_right,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    onTap: () => _showSaveLocation(context, settings),
                   ),
-                  onTap: () => _showSaveLocation(context, settings),
-                ),
-                _SettingsTile(
-                  icon: Icons.image_rounded,
-                  headline: '下载后保存到相册',
-                  supportingText: '完成后自动写入系统相册',
-                  trailing: _switch(
-                    value: settings.saveToGallery,
-                    label: '下载后保存到相册',
-                    onChanged: settings.setSaveToGallery,
+                  _SettingsTile(
+                    icon: Icons.image_rounded,
+                    headline: '下载后保存到相册',
+                    supportingText: '完成后自动写入系统相册',
+                    trailing: _switch(
+                      value: settings.saveToGallery,
+                      label: '下载后保存到相册',
+                      onChanged: settings.setSaveToGallery,
+                    ),
+                    onTap: () =>
+                        settings.setSaveToGallery(!settings.saveToGallery),
                   ),
-                  onTap: () =>
-                      settings.setSaveToGallery(!settings.saveToGallery),
-                ),
-                _SettingsTile(
-                  icon: Icons.speed_rounded,
-                  headline: '同时下载',
-                  supportingText: '${settings.maxConcurrent} 个任务，其余排队',
-                  trailing: Icon(
-                    Icons.chevron_right,
-                    color: scheme.onSurfaceVariant,
+                  _SettingsTile(
+                    icon: Icons.speed_rounded,
+                    headline: '同时下载',
+                    supportingText: '${settings.maxConcurrent} 个任务，其余排队',
+                    trailing: Icon(
+                      Icons.chevron_right,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    onTap: () => _showConcurrency(context, settings),
                   ),
-                  onTap: () => _showConcurrency(context, settings),
-                ),
-                const _CacheTile(),
-              ],
-            ),
-            const SizedBox(height: 24),
-            _sectionLabel(theme, scheme, '剪贴板'),
-            const SizedBox(height: 10),
-            _SettingsGroup(
-              children: <Widget>[
-                _SettingsTile(
-                  icon: Icons.content_paste_rounded,
-                  headline: '自动检测剪贴板',
-                  supportingText: '回到 App 时自动识别复制的分享链接',
-                  trailing: _switch(
-                    value: settings.clipboardAuto,
-                    label: '自动检测剪贴板',
-                    onChanged: settings.setClipboardAuto,
+                  const _CacheTile(),
+                ],
+              ),
+              const SizedBox(height: 24),
+            ],
+            // 浏览器读剪贴板需要用户手势与授权，自动检测在 web 上做不到。
+            if (!kIsWeb) ...[
+              _sectionLabel(theme, scheme, '剪贴板'),
+              const SizedBox(height: 10),
+              _SettingsGroup(
+                children: <Widget>[
+                  _SettingsTile(
+                    icon: Icons.content_paste_rounded,
+                    headline: '自动检测剪贴板',
+                    supportingText: '回到 App 时自动识别复制的分享链接',
+                    trailing: _switch(
+                      value: settings.clipboardAuto,
+                      label: '自动检测剪贴板',
+                      onChanged: settings.setClipboardAuto,
+                    ),
+                    onTap: () =>
+                        settings.setClipboardAuto(!settings.clipboardAuto),
                   ),
-                  onTap: () =>
-                      settings.setClipboardAuto(!settings.clipboardAuto),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            _sectionLabel(theme, scheme, '解析服务（抖音）'),
-            const SizedBox(height: 10),
-            const _DtkServiceCard(),
-            const SizedBox(height: 24),
+                ],
+              ),
+              const SizedBox(height: 24),
+            ],
+            // web 版由网关持有 DTK 地址与 Key，前端不暴露这一组配置。
+            if (!kIsWeb) ...[
+              _sectionLabel(theme, scheme, '解析服务（抖音）'),
+              const SizedBox(height: 10),
+              const _DtkServiceCard(),
+              const SizedBox(height: 24),
+            ],
             _sectionLabel(theme, scheme, '外观与关于'),
             const SizedBox(height: 10),
             _SettingsGroup(
               children: <Widget>[
-                _SettingsTile(
-                  icon: Icons.palette_rounded,
-                  headline: '动态取色',
-                  supportingText: '跟随系统壁纸生成主题色',
-                  trailing: _switch(
-                    value: settings.dynamicColor,
-                    label: '动态取色',
-                    onChanged: settings.setDynamicColor,
+                // 动态取色依赖 Android 系统调色板，web 上没有实现。
+                if (!kIsWeb)
+                  _SettingsTile(
+                    icon: Icons.palette_rounded,
+                    headline: '动态取色',
+                    supportingText: '跟随系统壁纸生成主题色',
+                    trailing: _switch(
+                      value: settings.dynamicColor,
+                      label: '动态取色',
+                      onChanged: settings.setDynamicColor,
+                    ),
+                    onTap: () =>
+                        settings.setDynamicColor(!settings.dynamicColor),
                   ),
-                  onTap: () => settings.setDynamicColor(!settings.dynamicColor),
-                ),
-                _SettingsTile(
-                  icon: Icons.system_update_alt_rounded,
-                  headline: '检查更新',
-                  supportingText: updates.shouldNotify
-                      ? '发现新版本 ${updates.latest!.versionName}'
-                      : '查看是否有新版本，下载后直接安装',
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      if (updates.shouldNotify)
-                        Container(
-                          width: 8,
-                          height: 8,
-                          margin: const EdgeInsets.only(right: 8),
-                          decoration: BoxDecoration(
-                            color: scheme.error,
-                            shape: BoxShape.circle,
+                // web 版不做 APK 更新（UpdateStore 在 web 上也不检查）。
+                if (!kIsWeb)
+                  _SettingsTile(
+                    icon: Icons.system_update_alt_rounded,
+                    headline: '检查更新',
+                    supportingText: updates.shouldNotify
+                        ? '发现新版本 ${updates.latest!.versionName}'
+                        : '查看是否有新版本，下载后直接安装',
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        if (updates.shouldNotify)
+                          Container(
+                            width: 8,
+                            height: 8,
+                            margin: const EdgeInsets.only(right: 8),
+                            decoration: BoxDecoration(
+                              color: scheme.error,
+                              shape: BoxShape.circle,
+                            ),
                           ),
+                        Icon(
+                          Icons.chevron_right,
+                          color: scheme.onSurfaceVariant,
                         ),
-                      Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
-                    ],
+                      ],
+                    ),
+                    onTap: () => _openUpdatePage(context),
                   ),
-                  onTap: () => _openUpdatePage(context),
-                ),
                 _SettingsTile(
                   icon: Icons.article_outlined,
                   headline: '更新日志',
@@ -286,7 +304,7 @@ class SettingsView extends StatelessWidget {
               ? '读取中…'
               : '${info.version} · build ${info.buildNumber}',
           trailing: Text(
-            'Android',
+            kIsWeb ? 'Web' : 'Android',
             style: theme.textTheme.bodySmall?.copyWith(
               color: scheme.onSurfaceVariant,
             ),

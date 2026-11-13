@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart'
     show Clipboard, ClipboardData, SystemNavigator;
 import 'package:material_ui/material_ui.dart'
@@ -166,6 +167,10 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
   }
 
   Future<void> _checkClipboard() async {
+    // 浏览器读剪贴板要用户手势 + 授权，自动检测在 web 上没有可行实现。
+    if (kIsWeb) {
+      return;
+    }
     if (!mounted || _sheetShowing) {
       return;
     }
@@ -289,11 +294,14 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
           ],
         ),
         bottomNavigationBar: NavigationBar(
-          selectedIndex: tab.index,
+          // web 只留首页与设置：下载页既没有队列也没有历史。
+          // index 语义保持 0=首页 / 2=设置，方便 PageView 直接定位。
+          selectedIndex: kIsWeb ? (tab.index == 2 ? 1 : 0) : tab.index,
           // drawUnderSystemBars 会清掉 MediaQuery.padding.bottom，
           // 必须用 viewPadding 才能把图标抬到手势条上方。
           maintainBottomViewPadding: true,
-          onDestinationSelected: tab.select,
+          onDestinationSelected: (int index) =>
+              tab.select(kIsWeb ? (index == 1 ? 2 : 0) : index),
           destinations: <NavigationDestination>[
             const NavigationDestination(
               icon: Icon(Icons.home_outlined),
@@ -301,12 +309,13 @@ class _MainPageState extends State<MainPage> with WidgetsBindingObserver {
               label: '首页',
               tooltip: '首页',
             ),
-            const NavigationDestination(
-              icon: Icon(Icons.download_outlined),
-              selectedIcon: Icon(Icons.download_rounded),
-              label: '下载',
-              tooltip: '下载',
-            ),
+            if (!kIsWeb)
+              const NavigationDestination(
+                icon: Icon(Icons.download_outlined),
+                selectedIcon: Icon(Icons.download_rounded),
+                label: '下载',
+                tooltip: '下载',
+              ),
             NavigationDestination(
               icon: Badge(
                 isLabelVisible: updates.shouldNotify,
