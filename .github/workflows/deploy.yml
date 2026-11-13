@@ -69,11 +69,12 @@ jobs:
       - name: upload and swap
         run: |
           set -euo pipefail
-          host="${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}"
-          target="${{ secrets.DEPLOY_PATH }}"
+          host="deploy@${{ secrets.DEPLOY_HOST }}"
+          target="/opt/clipkeep-gateway/static"
 
           scp -q web.tar.gz "$host:/tmp/clipkeep-web.tar.gz"
           ssh "$host" "set -euo pipefail
+            test -d '$target' || { echo '目标目录不存在：$target' >&2; exit 1; }
             rm -rf /tmp/clipkeep-web && mkdir -p /tmp/clipkeep-web
             tar -xzf /tmp/clipkeep-web.tar.gz -C /tmp/clipkeep-web
             # 只清目标目录里的内容，不删目录本身，避免需要父目录写权限。
