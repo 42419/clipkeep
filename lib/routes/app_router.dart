@@ -1,9 +1,11 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
 
 import '../api/downloader_api.dart';
 import '../api/dtk_client.dart';
+import '../pages/login/gateway_gate.dart';
 import '../pages/main_page.dart';
 import '../stores/downloader_store.dart';
 import '../stores/main_tab_controller.dart';
@@ -25,8 +27,11 @@ Widget getRootWidget({SettingsStore? settingsStore, UpdateStore? updateStore}) {
       ChangeNotifierProvider<DownloaderStore>(
         create: (_) => DownloaderStore(
           DownloaderApi(
-            dtkConfig: () =>
-                DtkConfig(baseUrl: store.dtkBaseUrl, apiKey: store.dtkApiKey),
+            dtkConfig: () => DtkConfig(
+              // web 版页面与 /api 同源，由网关代持 DTK 地址与 Key。
+              baseUrl: kIsWeb ? Uri.base.origin : store.dtkBaseUrl,
+              apiKey: kIsWeb ? '' : store.dtkApiKey,
+            ),
           ),
           maxConcurrentProvider: () => store.maxConcurrent,
         ),
@@ -46,7 +51,8 @@ Widget getRootWidget({SettingsStore? settingsStore, UpdateStore? updateStore}) {
               theme: AppTheme.light(seedColor: lightDynamic?.primary),
               darkTheme: AppTheme.dark(seedColor: darkDynamic?.primary),
               themeMode: ThemeMode.system,
-              home: const MainPage(),
+              // web 版先过登录闸门；Android 直接进主页。
+              home: kIsWeb ? const GatewayGate() : const MainPage(),
               routes: getRootRoute(),
               builder: (BuildContext context, Widget? child) {
                 final MediaQueryData media = MediaQuery.of(context);

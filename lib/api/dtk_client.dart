@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 import '../utils/result.dart';
 import '../viewmodels/parsed_source.dart';
@@ -19,8 +20,9 @@ class DtkConfig {
     return base;
   }
 
+  /// web 版由网关代持 Key，前端只需要同源地址。
   bool get isConfigured =>
-      normalizedBase.isNotEmpty && apiKey.trim().isNotEmpty;
+      normalizedBase.isNotEmpty && (kIsWeb || apiKey.trim().isNotEmpty);
 }
 
 /// DTK 业务/网络错误。
@@ -59,7 +61,9 @@ class DtkClient {
   String get _base => config.normalizedBase;
 
   Map<String, String> get _authHeaders => <String, String>{
-    'X-API-Key': config.apiKey.trim(),
+    // web 上不发 Key：网关用 cookie 鉴权，Key 永不出服务器。
+    if (!kIsWeb && config.apiKey.trim().isNotEmpty)
+      'X-API-Key': config.apiKey.trim(),
   };
 
   /// 解析抖音链接/分享文案，返回可下载来源。
@@ -260,6 +264,12 @@ class DtkClient {
   }
 
   String _envelopeError(Map<String, dynamic> envelope) {
+    // 网关（clipkeep-gateway）用的是 FastAPI 风格的 detail 字段，
+    // 不认它就只能显示「格式异常」，等于把真实原因吞掉。
+    final String? detail = _responseDetail(envelope);
+    if (detail != null) {
+      return detail;
+    }
     final dynamic error = envelope['error'];
     if (error is Map) {
       final String? message = error['message']?.toString();
@@ -272,6 +282,25 @@ class DtkClient {
       }
     }
     return '解析服务返回错误';
+  }
+
+  /// 从各种错误响应体里捞出可读文案。
+  String? _responseDetail(dynamic body) {
+    if (body is! Map) {
+      return null;
+    }
+    final String detail = (body['detail'] ?? '').toString().trim();
+    if (detail.isNotEmpty) {
+      return detail;
+    }
+    final dynamic error = body['error'];
+    if (error is Map) {
+      final String message = (error['message'] ?? '').toString().trim();
+      if (message.isNotEmpty) {
+        return message;
+      }
+    }
+    return null;
   }
 
   String? _envelopeCode(Map<String, dynamic> envelope) {
@@ -298,6 +327,11 @@ class DtkClient {
   }
 
   String _dioMessage(DioException e) {
+    // HTTP 错误码本身没有信息量，优先用响应体里的 detail。
+    final String? detail = _responseDetail(e.response?.data);
+    if (detail != null) {
+      return detail;
+    }
     switch (e.type) {
       case DioExceptionType.connectionTimeout:
         return '连接服务器超时';
