@@ -36,16 +36,38 @@ Android 端视频下载工具：粘贴抖音分享链接，解析后选画质保
 
 > 开发调试可用 `--dart-define=DTK_BASE_URL=... --dart-define=DTK_API_KEY=...` 提供默认值，但公开分发的 APK 不要使用，避免 Key 随包泄露。
 
+## 网页版
+
+同一份代码也能产出 web 页面，由独立的 `clipkeep-gateway`（Rust，静态单文件）提供静态托管与 DTK 反代。
+
+```bash
+flutter build web --release    # 产物在 build/web
+```
+
+平台差异：
+
+| 能力 | Android | Web |
+|---|---|---|
+| 鉴权 | 设置页填 DTK 地址与 Key | 输入访问口令，换一张 30 天 cookie |
+| 下载 | 落盘、写相册、断点续传 | 跳到网关 `/dl`，由浏览器自己下载 |
+| 下载队列 / 历史 | 有 | 无（刷新即清空） |
+| 实况图合成、动态取色、检查更新、剪贴板自动检测 | 有 | 隐藏 |
+| 图集保存 | 逐张落盘 | 逐张交给浏览器下载 |
+
+推 `v*` tag 或手动触发 `Deploy Web` workflow 会把产物同步到服务器静态目录；需在仓库配置 `DEPLOY_SSH_KEY` 与 `DEPLOY_HOST` 两个 secret，服务器上要求一个只对 `static/` 有写权限的 `deploy` 用户。
+
 ## 目录
 
 ```
 lib/
-  api/         DtkClient + dtk_mapper、DownloaderApi、UpdateService（update.json）、Changelog 解析
-  pages/       main_page、result_page、update_page、home/downloads/settings 三个 view
+  api/         DtkClient + dtk_mapper、DownloaderApi、GatewaySession、UpdateService、Changelog 解析
+  pages/       main_page、result_page、update_page、login/、home/downloads/settings 三个 view
+  platform/    abi_names（dart:ffi 条件导入，web 返回空）
   stores/      DownloaderStore（解析 + 任务）、SettingsStore、MainTabController
-  utils/       media_downloader（分片/续传/原生 JPEG 处理）、format、image_headers
+  utils/       media_downloader（门面）、media_downloader_io / _web、format、image_headers
   viewmodels/  ParsedSource / MediaPart / MediaStream、DownloadTask
   theme/ constants/ components/ routes/
+web/           Flutter web 入口与 manifest
 scripts/       gen_update_manifest.py（CI 生成 update.json 与 Release 说明）
 test/          unit_test.dart（纯 Dart 单元测试）
 ```
