@@ -36,7 +36,6 @@ dependencies:
   crypto: ^3.0.3
   path_provider: ^2.1.6
   gal: ^2.3.3
-  material_3_expressive: ^1.2.0
   material_ui: ^1.10.0
   font_awesome_flutter: ^11.0.0
   shared_preferences: ^2.5.6
@@ -46,6 +45,9 @@ dependencies:
   url_launcher: ^6.3.3
   package_info_plus: ^10.2.2
   dynamic_color: ^2.1.0
+  # 代码里没有直接引用，但 Flutter 的 cupertino 库会进编译产物；缺这个包时
+  # 图标树摇会报 "Expected to find fonts for ... packages/cupertino_icons/CupertinoIcons"。
+  cupertino_icons: ^2.0.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

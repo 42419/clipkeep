@@ -89,6 +89,14 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "3.0.8"
+  cupertino_icons:
+    dependency: "direct main"
+    description:
+      name: cupertino_icons
+      sha256: b7cc2390aac296c083bea762859413eb1cf5b630c70e0c7e4d831018f762a8b2
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "2.0.0"
   cupertino_ui:
     dependency: transitive
     description:
@@ -118,14 +126,6 @@ packages:
     description:
       name: dynamic_color
       sha256: "869b3bce0100eb519768ecd71c0111f0b5ea679f5f62e1f59c49d80067e730c5"
-      url: "https://pub.flutter-io.cn"
-    source: hosted
-    version: "2.1.0"
-  equatable:
-    dependency: transitive
-    description:
-      name: equatable
-      sha256: "3bce007a596ff8b3119c45d68aaef631272537c03d30e5d4534dd24bf4c5eaa2"
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "2.1.0"
@@ -389,14 +389,6 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "0.12.20"
-  material_3_expressive:
-    dependency: "direct main"
-    description:
-      name: material_3_expressive
-      sha256: "34241ba9930dd3e6d401f8e0062c62281a0538562575a7d2b9318303fed460e5"
-      url: "https://pub.flutter-io.cn"
-    source: hosted
-    version: "1.2.1"
   material_color_utilities:
     dependency: transitive
     description:
@@ -405,14 +397,6 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "0.13.0"
-  material_new_shapes:
-    dependency: transitive
-    description:
-      name: material_new_shapes
-      sha256: e4bc375205e187e8fb232573387112dd8c0dd45b03af8aa2b3c79eb4b9e3e0dc
-      url: "https://pub.flutter-io.cn"
-    source: hosted
-    version: "1.0.0"
   material_ui:
     dependency: "direct main"
     description:
@@ -437,14 +421,6 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "2.1.0"
-  motor:
-    dependency: transitive
-    description:
-      name: motor
-      sha256: cbd49f21b00e568c2b1a55f134ed803614a107782f4fea7769693bca32940c58
-      url: "https://pub.flutter-io.cn"
-    source: hosted
-    version: "1.1.0"
   nested:
     dependency: transitive
     description:
