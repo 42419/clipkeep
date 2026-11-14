@@ -5,6 +5,21 @@
 
 > 结构即接口：解析规则见文末「App 解析约定」，改动版本块格式前先读那一节。
 
+## [1.1.7] - 2026-11-14
+
+<!-- meta: versionCode=11 release=v1.1.7 -->
+
+### 修复
+- 「测试连接」不再要求根路径 `/healthz`：地址带路径前缀或经网关代理时，404 会被误报成「无法连接服务器」；现在只打解析探针，并对重定向给出明确提示。
+- web 构建补回 `cupertino_icons` 字体包，消除图标字体缺失告警（`CupertinoIcons.ttf` 树摇后约 1.4 KB）。
+
+### 变更
+- 同时下载上限统一为 3：代码此前允许 4，但设置页只能选 1~3。
+- README 修正「Android-only，没有 Web」与网页版说明的矛盾，并补齐平台能力差异。
+
+### 移除
+- 移除未使用的 `material_3_expressive` 依赖（连带 `equatable`、`material_new_shapes`、`motor`）。
+
 ## [1.1.6] - 2026-11-12
 
 <!-- meta: versionCode=10 release=v1.1.6 -->
