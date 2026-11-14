@@ -166,6 +166,7 @@ class DownloaderStore extends ChangeNotifier {
     MediaPart part, {
     int? videoQuality,
     bool coverOnly = false,
+    bool saveCover = false,
   }) {
     final MediaStream? stream = part.pickVideoQuality(videoQuality);
     final String stem = buildVideoStem(
@@ -180,6 +181,7 @@ class DownloaderStore extends ChangeNotifier {
       part,
       videoQuality: videoQuality,
       coverOnly: coverOnly,
+      saveCover: saveCover,
       coverUrl: source?.coverUrl,
       fileStem: stem,
     );

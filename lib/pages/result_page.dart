@@ -501,11 +501,19 @@ class _ResultPageState extends State<ResultPage> {
           runSpacing: 8,
           children: <Widget>[
             Tooltip(
-              message: current.isLive ? '合成为动态照片保存' : '保存这张图片',
+              message: current.isLive
+                  ? (kIsWeb ? '分别下载图片与视频' : '合成为动态照片保存')
+                  : '保存这张图片',
               child: FilledButton.icon(
                 onPressed: _imageSaving
                     ? null
-                    : () => _saveAlbum(context, source, onlyIndex: index),
+                    : () => _saveAlbum(
+                        context,
+                        source,
+                        onlyIndex: index,
+                        // 浏览器合成不了 Motion Photo，直接把两半都交给用户。
+                        separateLive: kIsWeb,
+                      ),
                 style: FilledButton.styleFrom(
                   minimumSize: const Size(64, 56),
                   shape: const StadiumBorder(),
@@ -516,12 +524,12 @@ class _ResultPageState extends State<ResultPage> {
                   _imageSaving
                       ? '保存中…'
                       : current.isLive
-                      ? '保存实况'
+                      ? (kIsWeb ? '保存图片+视频' : '保存实况')
                       : '保存这张',
                 ),
               ),
             ),
-            if (current.isLive)
+            if (current.isLive && !kIsWeb)
               Tooltip(
                 message: '图片和视频分别保存',
                 child: OutlinedButton.icon(
@@ -544,11 +552,16 @@ class _ResultPageState extends State<ResultPage> {
               ),
             if (images.length > 1)
               Tooltip(
-                message: '保存全部图片',
+                message: kIsWeb ? '打包全部图片与实况视频' : '保存全部图片',
                 child: TextButton(
                   onPressed: _imageSaving
                       ? null
-                      : () => _saveAlbum(context, source),
+                      : () => _saveAlbum(
+                          context,
+                          source,
+                          // web 上打包就不能只留静态图，否则实况视频全丢。
+                          separateLive: kIsWeb && anyLive,
+                        ),
                   style: TextButton.styleFrom(
                     minimumSize: const Size(64, 56),
                     padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -562,7 +575,9 @@ class _ResultPageState extends State<ResultPage> {
         if (anyLive) ...<Widget>[
           const SizedBox(height: 8),
           Text(
-            '实况图默认合成为动态照片；相册不识别时请改用「图片+视频」。',
+            kIsWeb
+                ? '网页版无法合成动态照片，将分别下载图片与视频。'
+                : '实况图默认合成为动态照片；相册不识别时请改用「图片+视频」。',
             style: theme.textTheme.bodySmall?.copyWith(
               color: scheme.onSurfaceVariant,
             ),
@@ -1412,6 +1427,7 @@ class _ResultPageState extends State<ResultPage> {
         part,
         videoQuality: _coverOnly ? null : quality,
         coverOnly: _coverOnly,
+        saveCover: _videoWithCover,
       );
       messenger.clearSnackBars();
       messenger.showSnackBar(
