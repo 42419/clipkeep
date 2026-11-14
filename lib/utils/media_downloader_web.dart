@@ -256,6 +256,17 @@ class MediaDownloader {
         path: '/api/bundle/$token',
         queryParameters: <String, String>{'n': zipName},
       );
+
+      // 先 HEAD 探一下。导航到错误响应会把整页冲成 JSON，用户就回不来了。
+      try {
+        final Response<dynamic> probe = await _dio.headUri<dynamic>(target);
+        if (probe.statusCode != 200) {
+          return const _Delivery.error('打包结果已失效，请重新点一次保存');
+        }
+      } catch (_) {
+        // 探测失败不阻塞下载，交给下一步兜底。
+      }
+
       if (!await _openUri(target)) {
         return const _Delivery.error('浏览器阻止了下载，请允许本站点下载文件');
       }
