@@ -14,7 +14,7 @@ class AppConstants {
   /// 设置项：回到前台时是否自动检测剪贴板链接。
   static const String prefClipboardAuto = 'clipboard_auto';
 
-  /// 设置项：同时下载的任务数（1~4）。
+  /// 设置项：同时下载的任务数（1~3）。
   static const String prefMaxConcurrent = 'settings_max_concurrent';
 
   /// 抖音解析服务（DTK）地址，仅作开发期 --dart-define 默认值；正式构建留空，由用户在设置页填写。

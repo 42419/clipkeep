@@ -36,7 +36,7 @@ class SettingsStore extends ChangeNotifier {
       _dynamicColor = prefs.getBool(AppConstants.prefDynamicColor) ?? true;
       _clipboardAuto = prefs.getBool(AppConstants.prefClipboardAuto) ?? true;
       _maxConcurrent = (prefs.getInt(AppConstants.prefMaxConcurrent) ?? 2)
-          .clamp(1, 4);
+          .clamp(1, 3);
       final String? base = prefs.getString(AppConstants.prefDtkBaseUrl);
       // 空串是用户主动清空的结果，不能回退到内置默认值。
       if (base != null) {
@@ -97,7 +97,7 @@ class SettingsStore extends ChangeNotifier {
   }
 
   Future<void> setMaxConcurrent(int value) async {
-    final int v = value.clamp(1, 4);
+    final int v = value.clamp(1, 3);
     if (v == _maxConcurrent) {
       return;
     }

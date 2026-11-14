@@ -328,7 +328,7 @@ class DownloaderStore extends ChangeNotifier {
 
   /// 把排队中的任务按并发上限拉起来；先入先出。
   void _pump() {
-    final int limit = (maxConcurrentProvider?.call() ?? 2).clamp(1, 4);
+    final int limit = (maxConcurrentProvider?.call() ?? 2).clamp(1, 3);
     int active = _tasks
         .where((DownloadTask t) => t.status == DownloadStatus.downloading)
         .length;
