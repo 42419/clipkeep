@@ -1,6 +1,5 @@
 import 'package:dio/dio.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:web/web.dart' as web;
 
 import '../viewmodels/download_task.dart';
 import '../viewmodels/parsed_source.dart';
@@ -251,9 +250,15 @@ class MediaDownloader {
           ? (data['skipped'] as List).length
           : 0;
 
-      // 响应带 attachment，iframe 里不会跳页，浏览器直接落文件。
-      final web.HTMLIFrameElement frame = _ensureFrame();
-      frame.src = '/api/bundle/$token?n=${Uri.encodeComponent(zipName)}';
+      // 拿到 token 后走一次导航触发下载。
+      // 不能塞进 iframe：服务端设了 X-Frame-Options: DENY，浏览器会直接拦掉。
+      final Uri target = Uri.base.replace(
+        path: '/api/bundle/$token',
+        queryParameters: <String, String>{'n': zipName},
+      );
+      if (!await _openUri(target)) {
+        return const _Delivery.error('浏览器阻止了下载，请允许本站点下载文件');
+      }
 
       return _Delivery(ok: true, saved: saved, skipped: skipped);
     } catch (error) {
@@ -271,29 +276,19 @@ class MediaDownloader {
     return '打包失败，请稍后再试';
   }
 
-  web.HTMLIFrameElement _ensureFrame() {
-    const String frameId = 'clipkeep_bundle_frame';
-    final web.Element? existing = web.document.getElementById(frameId);
-    if (existing != null) {
-      return existing as web.HTMLIFrameElement;
-    }
-    final web.HTMLIFrameElement frame =
-        web.document.createElement('iframe') as web.HTMLIFrameElement;
-    frame.id = frameId;
-    frame.name = frameId;
-    frame.style.display = 'none';
-    web.document.body?.append(frame);
-    return frame;
+  /// 拼同源下载地址，让网关补 `Content-Disposition`。
+  Future<bool> _open(String rawUrl, String filename) {
+    return _openUri(
+      Uri.base.replace(
+        path: '/dl',
+        queryParameters: <String, String>{'u': rawUrl, 'n': filename},
+      ),
+    );
   }
 
-  /// 拼同源下载地址，让网关补 `Content-Disposition`。
-  Future<bool> _open(String rawUrl, String filename) async {
-    final Uri target = Uri.base.replace(
-      path: '/dl',
-      queryParameters: <String, String>{'u': rawUrl, 'n': filename},
-    );
+  /// 同源导航：响应带 `attachment` 时浏览器不会跳走，直接落文件。
+  Future<bool> _openUri(Uri target) async {
     try {
-      // `_self` 走当前页导航：响应带 attachment 时浏览器不会跳走，直接落文件。
       return await launchUrl(
         target,
         mode: LaunchMode.platformDefault,
@@ -304,11 +299,17 @@ class MediaDownloader {
     }
   }
 
+  /// 压缩包名：去掉路径符与控制字符，并限长。
+  ///
+  /// 控制字符（换行、制表）编码进 URI 后是 `%0A` 这类形式，nginx 会直接回 400。
   String _zipName(String raw) {
     final String cleaned = raw
-        .replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')
+        .replaceAll(RegExp(r'[\\/:*?"<>|\u0000-\u001F\u007F]'), '_')
         .trim();
-    return cleaned.isEmpty ? 'ClipKeep' : cleaned;
+    if (cleaned.isEmpty) {
+      return 'ClipKeep';
+    }
+    return cleaned.length > 60 ? cleaned.substring(0, 60) : cleaned;
   }
 
   String _fileName(
