@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:clipkeep/api/changelog.dart';
 import 'package:clipkeep/api/downloader_api.dart';
+import 'package:clipkeep/api/dtk_client.dart';
 import 'package:clipkeep/api/dtk_mapper.dart';
 import 'package:clipkeep/api/update_service.dart';
 import 'package:clipkeep/stores/downloader_store.dart';
@@ -667,6 +669,111 @@ void main() {
     });
   });
 
+  group('解析服务连接检测', () {
+    test('地址带路径前缀、根路径没有 /healthz 时仍判定为正常', () async {
+      final List<String> requests = <String>[];
+      final HttpServer server = await _startStub(requests, (
+        HttpRequest request,
+        HttpResponse response,
+      ) async {
+        if (request.method == 'POST' &&
+            request.uri.path == '/dtk/api/v1/parse') {
+          // 真实 DTK 对 example.com 的回答：400 + 标准错误信封。
+          response.statusCode = 400;
+          response.headers.contentType = ContentType.json;
+          response.write(
+            jsonEncode(<String, Object?>{
+              'success': false,
+              'data': null,
+              'error': <String, String>{
+                'code': 'INVALID_URL',
+                'message': '不是支持的链接',
+              },
+              'meta': <String, String>{'request_id': 'test'},
+            }),
+          );
+        } else {
+          response.statusCode = 404;
+        }
+        await response.close();
+      });
+      addTearDown(() => server.close(force: true));
+
+      final DtkClient client = DtkClient(
+        DtkConfig(
+          baseUrl: 'http://127.0.0.1:${server.port}/dtk',
+          apiKey: 'dtk_test',
+        ),
+      );
+      final Result<String> result = await client.check();
+
+      expect(result, isA<Ok<String>>());
+      expect((result as Ok<String>).value, '连接正常');
+      // 根路径的 /healthz 不再被访问：前缀部署下它本来就不存在。
+      expect(
+        requests.where((String request) => request.endsWith('/healthz')),
+        isEmpty,
+      );
+    });
+
+    test('Key 被拒时给出明确原因', () async {
+      final HttpServer server = await _startStub(<String>[], (
+        HttpRequest request,
+        HttpResponse response,
+      ) async {
+        response.statusCode = 401;
+        response.headers.contentType = ContentType.json;
+        response.write(
+          jsonEncode(<String, Object?>{
+            'success': false,
+            'data': null,
+            'error': <String, String>{
+              'code': 'UNAUTHORIZED',
+              'message': 'missing or invalid API key',
+            },
+            'meta': <String, String>{'request_id': 'test'},
+          }),
+        );
+        await response.close();
+      });
+      addTearDown(() => server.close(force: true));
+
+      final DtkClient client = DtkClient(
+        DtkConfig(
+          baseUrl: 'http://127.0.0.1:${server.port}',
+          apiKey: 'dtk_test',
+        ),
+      );
+      final Result<String> result = await client.check();
+
+      expect(result, isA<Err<String>>());
+      expect((result as Err<String>).error.message, 'API Key 无效或缺失');
+    });
+
+    test('重定向不当作连接正常', () async {
+      final HttpServer server = await _startStub(<String>[], (
+        HttpRequest request,
+        HttpResponse response,
+      ) async {
+        response.statusCode = 301;
+        response.headers.set('location', 'https://example.com/');
+        await response.close();
+      });
+      addTearDown(() => server.close(force: true));
+
+      final DtkClient client = DtkClient(
+        DtkConfig(
+          baseUrl: 'http://127.0.0.1:${server.port}/dtk',
+          apiKey: 'dtk_test',
+        ),
+      );
+      final Result<String> result = await client.check();
+
+      expect(result, isA<Err<String>>());
+      expect((result as Err<String>).error.message, contains('重定向'));
+    });
+  });
+
   group('更新日志解析', () {
     test('按版本块切分，跳过 Unreleased 与说明性标题', () {
       const String text = '''
@@ -964,4 +1071,20 @@ class _RetryApi extends DownloaderApi {
 
   @override
   Future<String?> cacheCover(String? coverUrl, String id) async => null;
+}
+
+/// 起一个本地 HTTP 桩服务，记录请求行供断言。
+Future<HttpServer> _startStub(
+  List<String> requests,
+  Future<void> Function(HttpRequest request, HttpResponse response) handler,
+) async {
+  final HttpServer server = await HttpServer.bind(
+    InternetAddress.loopbackIPv4,
+    0,
+  );
+  server.listen((HttpRequest request) async {
+    requests.add('${request.method} ${request.uri.path}');
+    await handler(request, request.response);
+  });
+  return server;
 }

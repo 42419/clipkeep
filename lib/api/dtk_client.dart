@@ -105,17 +105,15 @@ class DtkClient {
   }
 
   /// 测试连通性与 Key 有效性（用一个必然被拒的 host，不消耗身份）。
+  ///
+  /// 不再先探根路径的 `/healthz`：地址可能带路径前缀（如 `https://host/dtk`），
+  /// 也可能前面挂了同源网关，`/healthz` 未必存在，404 并不代表服务不可用。
+  /// parse 探针本身就能同时验证地址、TLS、Key 与信封格式。
   Future<Result<String>> check() async {
     if (!config.isConfigured) {
       return const Err(AppError('未内置抖音解析服务（地址或 Key 缺失，需构建时注入）'));
     }
     try {
-      final Response<dynamic> health = await _dio.get<dynamic>(
-        '$_base/healthz',
-      );
-      if (health.statusCode != 200) {
-        return Err(AppError('无法连接服务器（HTTP ${health.statusCode}）'));
-      }
       final Response<dynamic> resp = await _dio.post<dynamic>(
         '$_base/api/v1/parse',
         queryParameters: <String, dynamic>{'wait': 0, 'lang': 'zh'},
@@ -123,6 +121,9 @@ class DtkClient {
         options: Options(headers: _authHeaders),
       );
       final int status = resp.statusCode ?? 0;
+      if (status >= 300 && status < 400) {
+        return Err(AppError('解析服务发生重定向（HTTP $status），请使用最终地址并改用 HTTPS'));
+      }
       if (status == 401) {
         return const Err(AppError('API Key 无效或缺失'));
       }
