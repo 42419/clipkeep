@@ -5,8 +5,12 @@ import 'package:material_ui/material_ui.dart';
 class AppTheme {
   AppTheme._();
 
-  /// 设计稿主色（绿色）。动态取色可用时会被壁纸取色覆盖，作为回退。
-  static const Color seed = Color(0xFF2F6B3E);
+  /// 主色种子：Material 3 绿色系（Material Green 500）。
+  ///
+  /// `ColorScheme.fromSeed` 会派生出完整色板：浅色主题 primary 约 `#3B6939`、
+  /// primaryContainer 约 `#BCF0B4`，深色主题 primary 约 `#A1D39A`。
+  /// 动态取色可用时会被壁纸取色覆盖，这里作为回退。
+  static const Color seed = Color(0xFF4CAF50);
 
   // 间距
   static const double gap = 16;
