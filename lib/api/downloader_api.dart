@@ -35,7 +35,7 @@ class DownloaderApi {
 
   Future<Result<ParsedSource>> parse(String input) async {
     try {
-      final String normalized = _normalizeInput(input);
+      final String normalized = normalizeInput(input);
       if (!_isDouyinLink(normalized)) {
         return const Err(AppError('目前仅支持抖音链接'));
       }
@@ -179,12 +179,16 @@ class DownloaderApi {
   static final RegExp _urlPattern = RegExp(r'https?://[^\s]+');
   static final RegExp _trailingPunctuation = RegExp(r'[),.;!?，。；！？、）】》」』]+$');
 
-  /// 把用户输入归一化为抖音链接或裸 aweme_id。
-  String _normalizeInput(String raw) {
+  /// 把用户输入或任务里的定位符归一化成抖音能解析的输入。
+  ///
+  /// 分享文案里抽出第一个链接；纯数字（aweme_id 通常 15 位以上）补成作品页
+  /// 地址；其余原样返回。解析与「刷新直链」共用它 —— `MediaPart.id` 正常是
+  /// 作品页地址，但 DTK 没给 `web_url` 时会退化成裸 `content_id`，直接当 URL
+  /// 发出去会被 `/parse` 的链接校验拒掉。
+  static String normalizeInput(String raw) {
     final String text = raw.trim();
     final RegExpMatch? match = _urlPattern.firstMatch(text);
     if (match == null) {
-      // 纯数字按抖音作品 ID 处理（aweme_id 通常 15 位以上）。
       final RegExpMatch? aweme = RegExp(r'^\d{15,}$').firstMatch(text);
       if (aweme != null) {
         return 'https://www.douyin.com/video/${aweme.group(0)}';
@@ -279,11 +283,14 @@ class DownloaderApi {
   }
 
   /// 按分段刷新最新流地址（下载失败重试时用，避免复用过期签名 URL）。
+  ///
+  /// 传的是 `part.id` 而不是 `part`：刷新的入参必须是链接，这里统一走
+  /// [normalizeInput]，裸作品 ID 会被补成作品页地址。
   Future<Result<List<MediaStream>>> refreshStreams(MediaPart part) async {
     final DtkConfig? config = dtkConfig?.call();
     if (config == null || !config.isConfigured) {
       return const Err(AppError('请先在设置页填写抖音解析服务地址与 API Key'));
     }
-    return DtkClient(config).refreshStreams(part.id);
+    return DtkClient(config).refreshStreams(normalizeInput(part.id));
   }
 }

@@ -57,6 +57,8 @@ ParsedSource mapDtkContent(Map<String, dynamic> content) {
     }
   }
 
+  // 优先用作品页地址，它既能提取内容 ID，也能直接拿去重新解析；
+  // DTK 没给 web_url 时退化成裸 content_id，刷新直链前必须补成链接。
   final String partId = webUrl.isNotEmpty
       ? webUrl
       : (content['content_id']?.toString() ?? '');

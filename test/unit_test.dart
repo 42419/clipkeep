@@ -194,6 +194,50 @@ void main() {
       expect(source.coverUrl, 'https://p3.douyinpic.com/cover.jpg');
       expect(source.isPortrait, isTrue);
     });
+
+    test('缺 web_url 时 part.id 退化为裸作品 ID，刷新前需补成链接', () {
+      final Map<String, dynamic> content = videoContent()
+        ..remove('web_url')
+        ..['content_id'] = '7300000000000000002';
+      final ParsedSource source = mapDtkContent(content);
+      expect(source.sourceUrl, isNull);
+      expect(source.parts.single.id, '7300000000000000002');
+      expect(
+        DownloaderApi.normalizeInput(source.parts.single.id),
+        'https://www.douyin.com/video/7300000000000000002',
+      );
+    });
+  });
+
+  group('刷新入参归一化', () {
+    test('分享文案里抽出链接', () {
+      expect(
+        DownloaderApi.normalizeInput(
+          '7.43 复制打开抖音，看看【作者】的作品 https://v.douyin.com/abc123/ 以此为准',
+        ),
+        'https://v.douyin.com/abc123/',
+      );
+    });
+
+    test('裸作品 ID 补成作品页地址', () {
+      expect(
+        DownloaderApi.normalizeInput('7300000000000000001'),
+        'https://www.douyin.com/video/7300000000000000001',
+      );
+    });
+
+    test('已有链接原样返回，去掉尾部标点', () {
+      expect(
+        DownloaderApi.normalizeInput(
+          'https://www.douyin.com/video/7300000000000000001，',
+        ),
+        'https://www.douyin.com/video/7300000000000000001',
+      );
+    });
+
+    test('空串不构造成垃圾链接', () {
+      expect(DownloaderApi.normalizeInput('  '), '');
+    });
   });
 
   group('历史记录', () {
