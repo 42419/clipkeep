@@ -5,6 +5,7 @@ import '../viewmodels/download_task.dart';
 import '../viewmodels/parsed_source.dart';
 import 'media_naming.dart';
 import 'result.dart';
+import 'web_api.dart';
 
 /// web 版下载器：不碰文件系统，只把链接交给浏览器。
 ///
@@ -16,11 +17,13 @@ class MediaDownloader {
   /// 打包走同源接口，页面与 `/api` 同一个域名，不存在 CORS。
   final Dio _dio = Dio(
     BaseOptions(
-      baseUrl: Uri.base.origin,
+      // 跟随 WEB_API_BASE：整站反代到子路径时，接口也跟着走同一个前缀。
+      baseUrl: webApiRoot(),
       connectTimeout: const Duration(seconds: 10),
       // 服务端最多压 3 分钟，客户端多等一会儿。
       receiveTimeout: const Duration(minutes: 4),
-      validateStatus: (int? status) => status != null && status < 500,
+      // 5xx 交给 _errorText 读 detail，别把 DioException 的英文抛给用户。
+      validateStatus: (int? status) => status != null && status < 600,
     ),
   );
 
@@ -43,15 +46,18 @@ class MediaDownloader {
       return const Err(AppError('没有可下载的地址'));
     }
 
+    // 扩展名与 MIME 必须一起定：图集里有 png/webp，统一写 image/jpeg 会让
+    // 浏览器按错误类型存盘（网关打包时也按这个值写响应头）。
+    final String ext = coverOnly ? _imageExtension(url) : '.mp4';
     final List<_Outgoing> outgoing = <_Outgoing>[
       _Outgoing(
         url,
         _fileName(
           fileStem,
-          coverOnly ? _imageExtension(url) : '.mp4',
+          ext,
           fallback: coverOnly ? 'ClipKeep_cover' : 'ClipKeep',
         ),
-        coverOnly ? 'image/jpeg' : 'video/mp4',
+        coverOnly ? _imageMime(ext) : 'video/mp4',
       ),
     ];
 
@@ -59,24 +65,22 @@ class MediaDownloader {
     if (!coverOnly && saveCover) {
       final String? cover = _normalize(coverUrl);
       if (cover != null) {
+        final String coverExt = _imageExtension(cover);
         outgoing.add(
           _Outgoing(
             cover,
             _fileName(
               '${(fileStem ?? 'ClipKeep').trim()}_cover',
-              _imageExtension(cover),
+              coverExt,
               fallback: 'ClipKeep_cover',
             ),
-            'image/jpeg',
+            _imageMime(coverExt),
           ),
         );
       }
     }
 
-    final _Delivery delivery = await _deliver(
-      outgoing,
-      fileStem ?? 'ClipKeep',
-    );
+    final _Delivery delivery = await _deliver(outgoing, fileStem ?? 'ClipKeep');
     if (!delivery.ok) {
       return Err(AppError(delivery.error ?? '浏览器拒绝了下载请求'));
     }
@@ -123,12 +127,9 @@ class MediaDownloader {
 
       final String? url = _normalize(image.primaryUrl);
       if (url != null) {
+        final String ext = _imageExtension(url);
         outgoing.add(
-          _Outgoing(
-            url,
-            fitFileName('$stem$suffix', _imageExtension(url)),
-            'image/jpeg',
-          ),
+          _Outgoing(url, fitFileName('$stem$suffix', ext), _imageMime(ext)),
         );
       }
 
@@ -136,7 +137,11 @@ class MediaDownloader {
         final String? live = _normalize(image.liveVideo?.primaryUrl);
         if (live != null) {
           outgoing.add(
-            _Outgoing(live, fitFileName('$stem${suffix}_live', '.mp4'), 'video/mp4'),
+            _Outgoing(
+              live,
+              fitFileName('$stem${suffix}_live', '.mp4'),
+              'video/mp4',
+            ),
           );
           liveCount += 1;
         }
@@ -252,10 +257,9 @@ class MediaDownloader {
 
       // 拿到 token 后走一次导航触发下载。
       // 不能塞进 iframe：服务端设了 X-Frame-Options: DENY，浏览器会直接拦掉。
-      final Uri target = Uri.base.replace(
-        path: '/api/bundle/$token',
-        queryParameters: <String, String>{'n': zipName},
-      );
+      final Uri target = webApiUri('/api/bundle/$token', <String, String>{
+        'n': zipName,
+      });
 
       // 先 HEAD 探一下。导航到错误响应会把整页冲成 JSON，用户就回不来了。
       try {
@@ -290,10 +294,7 @@ class MediaDownloader {
   /// 拼同源下载地址，让网关补 `Content-Disposition`。
   Future<bool> _open(String rawUrl, String filename) {
     return _openUri(
-      Uri.base.replace(
-        path: '/dl',
-        queryParameters: <String, String>{'u': rawUrl, 'n': filename},
-      ),
+      webApiUri('/dl', <String, String>{'u': rawUrl, 'n': filename}),
     );
   }
 
@@ -323,11 +324,7 @@ class MediaDownloader {
     return cleaned.length > 60 ? cleaned.substring(0, 60) : cleaned;
   }
 
-  String _fileName(
-    String? stem,
-    String extension, {
-    required String fallback,
-  }) {
+  String _fileName(String? stem, String extension, {required String fallback}) {
     final String base = (stem?.trim().isNotEmpty ?? false)
         ? stem!.trim()
         : '${fallback}_${DateTime.now().millisecondsSinceEpoch}';
@@ -366,6 +363,24 @@ class MediaDownloader {
     }
     return '.jpg';
   }
+
+  /// 扩展名对应的 MIME；猜不到按 JPEG。
+  String _imageMime(String extension) {
+    switch (extension) {
+      case '.png':
+        return 'image/png';
+      case '.webp':
+        return 'image/webp';
+      case '.gif':
+        return 'image/gif';
+      case '.heic':
+        return 'image/heic';
+      case '.avif':
+        return 'image/avif';
+      default:
+        return 'image/jpeg';
+    }
+  }
 }
 
 class _Outgoing {
@@ -381,10 +396,7 @@ class _Delivery {
   const _Delivery({required this.ok, this.saved = 0, this.skipped = 0})
     : error = null;
 
-  const _Delivery.error(this.error)
-    : ok = false,
-      saved = 0,
-      skipped = 0;
+  const _Delivery.error(this.error) : ok = false, saved = 0, skipped = 0;
 
   final bool ok;
   final int saved;
