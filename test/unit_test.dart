@@ -256,6 +256,19 @@ void main() {
       expect(isDouyinImageUrl(null), isFalse);
     });
 
+    test('按 host 判断，路径里带 douyin 不算数', () {
+      // 旧实现用整条 URL 的 contains，evil.com/douyin.jpg 会被误判成图床。
+      expect(isDouyinImageUrl('https://evil.com/douyin.jpg'), isFalse);
+      // 后缀必须是完整域名：douyinpic.com.evil.com 不是子域。
+      expect(
+        isDouyinImageUrl('https://p3.douyinpic.com.evil.com/a.jpg'),
+        isFalse,
+      );
+      expect(isDouyinImageUrl('https://P3.DouyinPic.COM/a.jpg'), isTrue);
+      expect(isDouyinImageUrl('https://p3.byteimg.com/a.jpg'), isTrue);
+      expect(isDouyinImageUrl('a.jpg'), isFalse);
+    });
+
     test('原生端（非 web）保持直连与原请求头', () {
       // flutter test 跑在 VM 上，kIsWeb 为 false。
       const String url = 'https://p3.douyinpic.com/a.jpg';

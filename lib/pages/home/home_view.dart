@@ -428,6 +428,7 @@ class _HomeViewState extends State<HomeView> {
             height: 60,
             fit: BoxFit.cover,
             headers: displayImageHeaders(url),
+            webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
             loadingBuilder:
                 (
                   BuildContext context,

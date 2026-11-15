@@ -2,13 +2,31 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 
 import 'web_api.dart';
 
+/// 抖音图床域名（含子域）。判断按 host 后缀做，不看整条 URL：
+/// `https://evil.com/douyin.jpg` 里的 "douyin" 不能算数。
+const Set<String> _douyinImageHosts = <String>{
+  'douyin.com',
+  'iesdouyin.com',
+  'douyinpic.com',
+  'douyincdn.com',
+  'douyinstatic.com',
+  'bytecdn.cn',
+  'byteimg.com',
+};
+
 /// 是不是抖音图床的链接。
 bool isDouyinImageUrl(String? rawUrl) {
-  final String u = (rawUrl ?? '').toLowerCase();
-  return u.contains('douyin') ||
-      u.contains('iesdouyin') ||
-      u.contains('douyinpic') ||
-      u.contains('bytecdn');
+  final Uri? uri = Uri.tryParse((rawUrl ?? '').trim());
+  final String host = uri?.host.toLowerCase() ?? '';
+  if (host.isEmpty) {
+    return false;
+  }
+  for (final String suffix in _douyinImageHosts) {
+    if (host == suffix || host.endsWith('.$suffix')) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /// 按图片 URL 的来源返回合适的请求头：抖音图床要抖音 Referer，其余用通用 UA。

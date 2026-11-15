@@ -409,6 +409,9 @@ class _ResultPageState extends State<ResultPage> {
     return Image.network(
       displayImageUrl(url),
       headers: displayImageHeaders(url),
+      // 拉取失败时退回浏览器原生 <img>：同源 /img 不需要 CORS，
+      // 这条兜底能救回 CanvasKit 解码或 XHR 出问题的浏览器。
+      webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
       fit: fit,
       cacheWidth: cacheWidth,
       loadingBuilder:
@@ -751,6 +754,7 @@ class _ResultPageState extends State<ResultPage> {
       return Image.network(
         displayImageUrl(url),
         headers: displayImageHeaders(url),
+        webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
         fit: BoxFit.cover,
         loadingBuilder:
             (BuildContext context, Widget child, ImageChunkEvent? progress) {
@@ -1027,6 +1031,7 @@ class _ResultPageState extends State<ResultPage> {
         height: 44,
         fit: BoxFit.cover,
         headers: displayImageHeaders(url),
+        webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
         loadingBuilder:
             (BuildContext context, Widget child, ImageChunkEvent? progress) {
               if (progress == null) {

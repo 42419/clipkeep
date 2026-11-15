@@ -651,6 +651,7 @@ class _DownloadsViewState extends State<DownloadsView> {
             height: 56,
             fit: BoxFit.cover,
             headers: displayImageHeaders(url),
+            webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
             loadingBuilder:
                 (
                   BuildContext context,
