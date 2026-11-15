@@ -17,6 +17,7 @@ import 'package:clipkeep/utils/media_downloader.dart';
 import 'package:clipkeep/utils/media_naming.dart';
 import 'package:clipkeep/utils/result.dart';
 import 'package:clipkeep/utils/format.dart';
+import 'package:clipkeep/utils/image_headers.dart';
 import 'package:clipkeep/utils/web_api.dart';
 import 'package:clipkeep/viewmodels/download_task.dart';
 import 'package:clipkeep/viewmodels/parsed_source.dart';
@@ -225,6 +226,42 @@ void main() {
       expect(normalizeApiPrefix('clipkeep'), '/clipkeep');
       expect(normalizeApiPrefix('/clipkeep/'), '/clipkeep');
       expect(normalizeApiPrefix('clipkeep/v1//'), '/clipkeep/v1');
+    });
+  });
+
+  group('web 图片中转', () {
+    test('抖音图床链接改写成同源 /img，原链接整体编码', () {
+      const String src =
+          'https://p3-pc-sign.douyinpic.com/a/b.jpeg?x-expires=1&sign=a%2Bb';
+      final String out = gatewayImageUrl(src, apiRoot: 'http://47.99.60.222');
+      final Uri uri = Uri.parse(out);
+      expect(uri.origin, 'http://47.99.60.222');
+      expect(uri.path, '/img');
+      // 取回来必须与原链接逐字一致，签名里的 %2B 不能被吃掉。
+      expect(uri.queryParameters['u'], src);
+    });
+
+    test('整站反代到子路径时 /img 跟着前缀走', () {
+      final String out = gatewayImageUrl(
+        'https://p3.douyinpic.com/a.jpg',
+        apiRoot: 'https://example.com/clipkeep',
+      );
+      expect(Uri.parse(out).path, '/clipkeep/img');
+    });
+
+    test('只认抖音图床，其余链接不改写', () {
+      expect(isDouyinImageUrl('https://p3.douyinpic.com/a.jpg'), isTrue);
+      expect(isDouyinImageUrl('https://p26.bytecdn.cn/a.jpg'), isTrue);
+      expect(isDouyinImageUrl('https://i0.hdslb.com/a.jpg'), isFalse);
+      expect(isDouyinImageUrl(null), isFalse);
+    });
+
+    test('原生端（非 web）保持直连与原请求头', () {
+      // flutter test 跑在 VM 上，kIsWeb 为 false。
+      const String url = 'https://p3.douyinpic.com/a.jpg';
+      expect(displayImageUrl(url), url);
+      expect(displayImageHeaders(url), imageHeadersFor(url));
+      expect(displayImageHeaders(url)?['referer'], 'https://www.douyin.com/');
     });
   });
 

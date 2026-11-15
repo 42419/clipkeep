@@ -646,11 +646,11 @@ class _DownloadsViewState extends State<DownloadsView> {
     final Widget network = url == null
         ? fallback
         : Image.network(
-            url,
+            displayImageUrl(url),
             width: 56,
             height: 56,
             fit: BoxFit.cover,
-            headers: imageHeadersFor(url),
+            headers: displayImageHeaders(url),
             loadingBuilder:
                 (
                   BuildContext context,

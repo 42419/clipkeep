@@ -423,11 +423,11 @@ class _HomeViewState extends State<HomeView> {
     final Widget network = url == null
         ? fallback
         : Image.network(
-            url,
+            displayImageUrl(url),
             width: 60,
             height: 60,
             fit: BoxFit.cover,
-            headers: imageHeadersFor(url),
+            headers: displayImageHeaders(url),
             loadingBuilder:
                 (
                   BuildContext context,

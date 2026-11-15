@@ -407,8 +407,8 @@ class _ResultPageState extends State<ResultPage> {
       );
     }
     return Image.network(
-      url,
-      headers: imageHeadersFor(url),
+      displayImageUrl(url),
+      headers: displayImageHeaders(url),
       fit: fit,
       cacheWidth: cacheWidth,
       loadingBuilder:
@@ -749,8 +749,8 @@ class _ResultPageState extends State<ResultPage> {
         return _decorativeCover(scheme);
       }
       return Image.network(
-        url,
-        headers: imageHeadersFor(url),
+        displayImageUrl(url),
+        headers: displayImageHeaders(url),
         fit: BoxFit.cover,
         loadingBuilder:
             (BuildContext context, Widget child, ImageChunkEvent? progress) {
@@ -1022,11 +1022,11 @@ class _ResultPageState extends State<ResultPage> {
     }
     return ClipOval(
       child: Image.network(
-        url,
+        displayImageUrl(url),
         width: 44,
         height: 44,
         fit: BoxFit.cover,
-        headers: imageHeadersFor(url),
+        headers: displayImageHeaders(url),
         loadingBuilder:
             (BuildContext context, Widget child, ImageChunkEvent? progress) {
               if (progress == null) {
