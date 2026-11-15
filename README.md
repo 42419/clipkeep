@@ -80,8 +80,6 @@ scripts/       gen_update_manifest.py（CI 生成 update.json 与 Release 说明
 test/          unit_test.dart（纯 Dart 单元测试）
 ```
 
-开发约定见 `AGENTS.md`。
-
 ## 已知限制
 
 - 仅支持抖音；非抖音链接会直接提示不支持。
