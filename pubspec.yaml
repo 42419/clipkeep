@@ -111,3 +111,10 @@ flutter_launcher_icons:
   adaptive_icon_background: "#EAF2FE"
   adaptive_icon_foreground: "assets/icon/icon.png"
   adaptive_icon_foreground_inset: 20
+  # 网页图标：favicon 与 PWA 清单里的 192/512/maskable 都从同一张图生成，
+  # 不再留 Flutter 默认的蓝色 logo。
+  web:
+    generate: true
+    image_path: "assets/icon/icon.png"
+    background_color: "#F7FBF1"
+    theme_color: "#3B6939"
