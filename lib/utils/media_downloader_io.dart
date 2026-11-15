@@ -333,35 +333,19 @@ class MediaDownloader {
     }
   }
 
-  /// 续传前探测当前选择的总字节数；任一路无法确认就返回 null。
+  /// 续传前探测当前选择的总字节数；无法确认就返回 null。
   Future<int?> probeSelectionTotal(MediaPart part, {int? videoQuality}) async {
     try {
       final MediaStream? video = part.pickVideoQuality(videoQuality);
       if (video == null) {
         return null;
       }
-      final ({bool supported, int? total}) videoProbe = await _probeRange(
+      final ({bool supported, int? total}) probe = await _probeRange(
         video.primaryUrl,
         video.headers,
         null,
       );
-      if (videoProbe.total == null) {
-        return null;
-      }
-      int total = videoProbe.total!;
-      final MediaStream? audio = part.pickAudio();
-      if (audio != null) {
-        final ({bool supported, int? total}) audioProbe = await _probeRange(
-          audio.primaryUrl,
-          audio.headers,
-          null,
-        );
-        if (audioProbe.total == null) {
-          return null;
-        }
-        total += audioProbe.total!;
-      }
-      return total;
+      return probe.total;
     } catch (_) {
       return null;
     }

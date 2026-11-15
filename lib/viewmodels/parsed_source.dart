@@ -165,55 +165,23 @@ class MediaPart {
     return pool.first;
   }
 
-  MediaStream? pickAudio() {
-    final audios = streams.where((s) => s.kind == 'audio').toList();
-    if (audios.isEmpty) {
-      return null;
-    }
-    audios.sort((a, b) => b.quality.compareTo(a.quality));
-    return audios.first;
-  }
-
   /// 手动重试时判断新旧流是否仍是同一选择，决定能否复用临时分片。
   /// 除画质外必须校验 codec 与带宽/大小，避免把另一编码的文件续接成坏文件。
+  ///
+  /// 只比视频流：抖音返回的是带音轨的 MP4，DTK 的 `Media` 从不产出独立音频流，
+  /// 早期的音轨比较分支已随「视频/音频并行下载」一起移除。
   bool sameDownloadSelection(MediaPart other, {int? videoQuality}) {
-    final MediaStream? oldAudio = pickAudio();
-    final MediaStream? newAudio = other.pickAudio();
     final MediaStream? oldVideo = pickVideoQuality(videoQuality);
     final MediaStream? newVideo = other.pickVideoQuality(videoQuality);
-    if (oldVideo == null ||
-        newVideo == null ||
-        !_sameVideoStream(oldVideo, newVideo)) {
-      return false;
-    }
-    if ((oldAudio == null) != (newAudio == null)) {
-      return false;
-    }
-    return oldAudio == null || _sameAudioStream(oldAudio, newAudio!);
+    return oldVideo != null &&
+        newVideo != null &&
+        _sameVideoStream(oldVideo, newVideo);
   }
 
   bool _sameVideoStream(MediaStream a, MediaStream b) {
     if (a.quality != b.quality || a.codec.isEmpty || a.codec != b.codec) {
       return false;
     }
-    return _sameTransportIdentity(a, b, requireMeta: true);
-  }
-
-  bool _sameAudioStream(MediaStream a, MediaStream b) {
-    if (a.quality != b.quality) {
-      return false;
-    }
-    if (a.codec.isNotEmpty && b.codec.isNotEmpty && a.codec != b.codec) {
-      return false;
-    }
-    return _sameTransportIdentity(a, b, requireMeta: true);
-  }
-
-  bool _sameTransportIdentity(
-    MediaStream a,
-    MediaStream b, {
-    required bool requireMeta,
-  }) {
     final int? as = a.sizeBytes;
     final int? bs = b.sizeBytes;
     if (as != null || bs != null) {
@@ -228,10 +196,8 @@ class MediaPart {
         return false;
       }
     }
-    if (requireMeta && as == null && bs == null && ab == null && bb == null) {
-      return false;
-    }
-    return true;
+    // 两边都没有大小与码率时无法证明是同一档，宁可重下。
+    return as != null || bs != null || ab != null || bb != null;
   }
 }
 

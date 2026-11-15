@@ -455,31 +455,6 @@ void main() {
       expect(part.pickVideoQuality(999), isNull);
     });
 
-    test('多音轨时选最高码率', () {
-      const MediaPart audioPart = MediaPart(
-        id: 'audio',
-        title: 'audio',
-        durationSeconds: 1,
-        streams: <MediaStream>[
-          MediaStream(
-            kind: 'audio',
-            quality: 30251,
-            codec: 'flac',
-            urls: <String>['https://example.com/flac'],
-            headers: <String, String>{},
-          ),
-          MediaStream(
-            kind: 'audio',
-            quality: 128000,
-            codec: 'avc',
-            urls: <String>['https://example.com/aac'],
-            headers: <String, String>{},
-          ),
-        ],
-      );
-      expect(audioPart.pickAudio()?.quality, 128000);
-    });
-
     test('同画质重试才允许复用临时分片', () {
       const MediaPart same = MediaPart(
         id: '7300000000000000001',
@@ -601,7 +576,7 @@ void main() {
   });
 
   group('下载探测与重试', () {
-    test('probeSelectionTotal 汇总视频和音轨总长度', () async {
+    test('probeSelectionTotal 返回视频总长度', () async {
       final _RangeAdapter adapter = _RangeAdapter();
       final MediaDownloader media = MediaDownloader(
         dio: Dio()..httpClientAdapter = adapter,
@@ -619,17 +594,9 @@ void main() {
             headers: <String, String>{},
             bandwidth: 1000,
           ),
-          MediaStream(
-            kind: 'audio',
-            quality: 128000,
-            codec: '',
-            urls: <String>['https://example.com/a'],
-            headers: <String, String>{},
-            bandwidth: 128,
-          ),
         ],
       );
-      expect(await media.probeSelectionTotal(part, videoQuality: 720), 1200);
+      expect(await media.probeSelectionTotal(part, videoQuality: 720), 1000);
     });
 
     test('retryTask 防重入，只发起一次刷新', () async {

@@ -298,12 +298,8 @@ class DownloaderStore extends ChangeNotifier {
     if (part == null || task.coverOnly) {
       return null;
     }
-    int? need;
     final MediaStream? video = part.pickVideoQuality(task.videoQuality);
-    final int? videoBytes = video?.sizeBytes;
-    if (videoBytes != null) {
-      need = videoBytes + (part.pickAudio()?.sizeBytes ?? 0);
-    }
+    int? need = video?.sizeBytes;
     need ??= await _api.probeSelectionTotal(
       part,
       videoQuality: task.videoQuality,
@@ -315,7 +311,7 @@ class DownloaderStore extends ChangeNotifier {
     if (free == null) {
       return null;
     }
-    // 视频/音频需要“源分片 + 成品”两份空间；封面只有一份。
+    // 视频需要“源分片 + 成品”两份空间；封面只有一份。
     // 续传时只算剩余字节，避免“空间明明够却提示不足”。
     final int remaining = (need - task.receivedBytes).clamp(0, need);
     final double factor = task.coverOnly ? 1.15 : 2.05;
