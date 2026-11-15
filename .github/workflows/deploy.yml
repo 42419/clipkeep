@@ -78,17 +78,25 @@ jobs:
         run: |
           set -euo pipefail
           host="deploy@${{ secrets.DEPLOY_HOST }}"
-          target="/opt/clipkeep-gateway/static"
+          root="/opt/clipkeep-gateway"
+          # 每次部署落一个独立目录，静态入口 www/current 是软链：切换只做一次
+          # rename，访问者要么全拿旧版本、要么全拿新版本，不会读到半新半旧的页面。
+          release="$root/releases/$(date -u +%Y%m%d-%H%M%S)"
 
           scp -q web.tar.gz "$host:/tmp/clipkeep-web.tar.gz"
-          # rsync --delete 取代「先 find -delete 再 cp」：不再有整站清空到
-          # 复制完成之间的空窗，cp 失败也不会留下半空的目录。
-          # --delay-updates 把文件落盘推迟到传输末尾，窗口进一步缩小。
           ssh "$host" "set -euo pipefail
-            test -d '$target' || { echo '目标目录不存在：$target' >&2; exit 1; }
+            test -d '$root/releases' || { echo '服务器尚未迁移到 releases + www/current 布局，缺少 $root/releases' >&2; exit 1; }
+            test -d '$root/www' || { echo '服务器尚未迁移到 releases + www/current 布局，缺少 $root/www' >&2; exit 1; }
             rm -rf /tmp/clipkeep-web && mkdir -p /tmp/clipkeep-web
             tar -xzf /tmp/clipkeep-web.tar.gz -C /tmp/clipkeep-web
-            rsync -a --delete --delay-updates /tmp/clipkeep-web/ '$target'/
-            rm -rf /tmp/clipkeep-web /tmp/clipkeep-web.tar.gz
-            echo '--- 已部署 ---'
-            ls -1 '$target' | head -6"
+            rm -rf '$release'
+            mv /tmp/clipkeep-web '$release'
+            # ln -sfn 是先 unlink 再 symlink，中间有一瞬入口不存在；
+            # 「建临时软链 + mv -T」才是 rename，原子替换。
+            ln -sfn '$release' '$root/www/current.tmp'
+            mv -T '$root/www/current.tmp' '$root/www/current'
+            rm -rf /tmp/clipkeep-web.tar.gz
+            # 保留最近 5 个版本；当前版本一定在最新 5 个里，不会被清掉
+            ls -1dt '$root'/releases/*/ 2>/dev/null | tail -n +6 | xargs -r rm -rf
+            echo '--- 已切换到 ---'
+            readlink -f '$root/www/current'"
