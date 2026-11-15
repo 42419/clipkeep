@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import '../utils/result.dart';
 import '../viewmodels/parsed_source.dart';
 import 'dtk_mapper.dart';
+import 'gateway_session.dart';
 
 /// 抖音解析服务（DTK）连接配置。
 class DtkConfig {
@@ -245,6 +246,11 @@ class DtkClient {
         '解析服务发生重定向（HTTP $status），请使用最终地址并改用 HTTPS',
         code: 'REDIRECT',
       );
+    }
+    // web 上 401 只可能是网关 cookie 过期：让登录闸门回登录页，
+    // 否则用户只会看到一句解析失败，不知道要重新输口令。
+    if (kIsWeb && status == 401) {
+      markGatewaySessionExpired();
     }
     final dynamic body = resp.data;
     if (body is! Map) {

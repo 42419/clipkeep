@@ -7,6 +7,7 @@ import 'package:clipkeep/api/changelog.dart';
 import 'package:clipkeep/api/downloader_api.dart';
 import 'package:clipkeep/api/dtk_client.dart';
 import 'package:clipkeep/api/dtk_mapper.dart';
+import 'package:clipkeep/api/gateway_session.dart';
 import 'package:clipkeep/api/update_service.dart';
 import 'package:clipkeep/stores/downloader_store.dart';
 import 'package:clipkeep/stores/main_tab_controller.dart';
@@ -16,6 +17,7 @@ import 'package:clipkeep/utils/media_downloader.dart';
 import 'package:clipkeep/utils/media_naming.dart';
 import 'package:clipkeep/utils/result.dart';
 import 'package:clipkeep/utils/format.dart';
+import 'package:clipkeep/utils/web_api.dart';
 import 'package:clipkeep/viewmodels/download_task.dart';
 import 'package:clipkeep/viewmodels/parsed_source.dart';
 import 'package:dio/dio.dart';
@@ -205,6 +207,57 @@ void main() {
       expect(
         DownloaderApi.normalizeInput(source.parts.single.id),
         'https://www.douyin.com/video/7300000000000000002',
+      );
+    });
+  });
+
+  group('web 接口前缀', () {
+    test('默认空串表示接口在站点根', () {
+      expect(normalizeApiPrefix(''), '');
+      expect(normalizeApiPrefix('   '), '');
+    });
+
+    test('单独一个斜杠也归一成空', () {
+      expect(normalizeApiPrefix('/'), '');
+    });
+
+    test('补前导斜杠、去尾部斜杠', () {
+      expect(normalizeApiPrefix('clipkeep'), '/clipkeep');
+      expect(normalizeApiPrefix('/clipkeep/'), '/clipkeep');
+      expect(normalizeApiPrefix('clipkeep/v1//'), '/clipkeep/v1');
+    });
+  });
+
+  group('网关登录错误文案', () {
+    test('5xx 翻成中文，不泄漏 DioException', () async {
+      final GatewaySession session = GatewaySession(
+        dio: Dio()..httpClientAdapter = _SessionAdapter(502),
+      );
+      await expectLater(
+        session.login('token'),
+        throwsA(
+          isA<GatewayAuthException>().having(
+            (GatewayAuthException e) => e.message,
+            'message',
+            '网关暂时不可用（HTTP 502），请稍后再试',
+          ),
+        ),
+      );
+    });
+
+    test('401 提示口令不正确', () async {
+      final GatewaySession session = GatewaySession(
+        dio: Dio()..httpClientAdapter = _SessionAdapter(401),
+      );
+      await expectLater(
+        session.login('token'),
+        throwsA(
+          isA<GatewayAuthException>().having(
+            (GatewayAuthException e) => e.message,
+            'message',
+            '口令不正确',
+          ),
+        ),
       );
     });
   });
@@ -1031,6 +1084,28 @@ class _RangeAdapter implements HttpClientAdapter {
       },
     );
   }
+
+  @override
+  void close({bool force = false}) {}
+}
+
+class _SessionAdapter implements HttpClientAdapter {
+  _SessionAdapter(this.status);
+
+  final int status;
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async => ResponseBody.fromString(
+    '',
+    status,
+    headers: <String, List<String>>{
+      Headers.contentTypeHeader: <String>['application/json'],
+    },
+  );
 
   @override
   void close({bool force = false}) {}

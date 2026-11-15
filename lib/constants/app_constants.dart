@@ -41,6 +41,12 @@ class AppConstants {
   /// 安全存储键：DTK API Key。
   static const String secureDtkApiKey = 'settings_dtk_api_key';
 
+  /// web 版的接口前缀，默认空（接口与页面同在站点根）。
+  ///
+  /// 只在「整个网关反代到子路径」时需要设置，且必须与 `flutter build web
+  /// --base-href` 的前缀一致，见 `utils/web_api.dart`。
+  static const String webApiBase = String.fromEnvironment('WEB_API_BASE');
+
   /// GitHub 仓库（owner/name），用于检查更新。
   static const String githubRepo = '42419/clipkeep';
 

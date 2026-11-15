@@ -13,6 +13,7 @@ import '../stores/settings_store.dart';
 import '../stores/update_store.dart';
 import '../theme/app_theme.dart';
 import '../theme/dynamic_color_host.dart';
+import '../utils/web_api.dart';
 
 /// 应用根 Widget：注入 Provider + Material 3 主题 + 命名路由。
 Widget getRootWidget({SettingsStore? settingsStore, UpdateStore? updateStore}) {
@@ -29,7 +30,7 @@ Widget getRootWidget({SettingsStore? settingsStore, UpdateStore? updateStore}) {
           DownloaderApi(
             dtkConfig: () => DtkConfig(
               // web 版页面与 /api 同源，由网关代持 DTK 地址与 Key。
-              baseUrl: kIsWeb ? Uri.base.origin : store.dtkBaseUrl,
+              baseUrl: kIsWeb ? webApiRoot() : store.dtkBaseUrl,
               apiKey: kIsWeb ? '' : store.dtkApiKey,
             ),
           ),

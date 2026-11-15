@@ -27,7 +27,27 @@ class _GatewayGateState extends State<GatewayGate> {
   @override
   void initState() {
     super.initState();
+    gatewayAuthEpoch.addListener(_onSessionExpired);
     _probe();
+  }
+
+  @override
+  void dispose() {
+    gatewayAuthEpoch.removeListener(_onSessionExpired);
+    super.dispose();
+  }
+
+  /// 任一接口请求被 401 拒绝：cookie 已过期，直接回到登录页。
+  ///
+  /// 不再重探会话 —— 401 本身就是结论，重探只会多一次必然失败的请求。
+  void _onSessionExpired() {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _authenticated = false;
+      _checking = false;
+    });
   }
 
   Future<void> _probe() async {
